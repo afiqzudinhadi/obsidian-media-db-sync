@@ -1,0 +1,80 @@
+{
+  "id": 84958,
+  "name": "Loki",
+  "original_name": "Loki",
+  "original_language": "en",
+  "spoken_languages": [
+    {
+      "iso_639_1": "en",
+      "english_name": "English"
+    }
+  ],
+  "overview": "After stealing the Tesseract...",
+  "episode_run_time": [],
+  "status": "Ended",
+  "first_air_date": "2021-06-09",
+  "last_air_date": "2023-11-09",
+  "number_of_seasons": 2,
+  "number_of_episodes": 12,
+  "networks": [
+    {
+      "name": "Disney+"
+    }
+  ],
+  "vote_average": 8.2,
+  "homepage": "https://www.disneyplus.com/series/wp/6pARMvILBGzF",
+  "poster_path": null,
+  "genres": [
+    {
+      "name": "Drama"
+    },
+    {
+      "name": "Sci-Fi & Fantasy"
+    }
+  ],
+  "origin_country": [
+    "United States of America"
+  ],
+  "created_by": [
+    {
+      "name": "Michael Waldron"
+    }
+  ],
+  "aggregate_credits": {
+    "cast": [
+      {
+        "name": "Tom Hiddleston"
+      },
+      {
+        "name": "Sophia Di Martino"
+      }
+    ]
+  },
+  "external_ids": {
+    "imdb_id": "tt9140554"
+  },
+  "content_ratings": {
+    "results": [
+      {
+        "iso_3166_1": "US",
+        "rating": "TV-14"
+      }
+    ]
+  },
+  "videos": {
+    "results": [
+      {
+        "site": "YouTube",
+        "type": "Trailer",
+        "official": true,
+        "key": "nW948Va-l10"
+      }
+    ]
+  },
+  "last_episode_to_air": {
+    "season_number": 2,
+    "episode_number": 6,
+    "name": "Glorious Purpose"
+  },
+  "next_episode_to_air": null
+}

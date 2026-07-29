@@ -1,0 +1,81 @@
+{
+  "id": 693134,
+  "title": "Dune: Part Two",
+  "original_title": "Dune: Part Two",
+  "original_language": "en",
+  "spoken_languages": [
+    {
+      "iso_639_1": "en",
+      "english_name": "English"
+    }
+  ],
+  "overview": "Paul Atreides unites with the Fremen...",
+  "runtime": 167,
+  "status": "Released",
+  "release_date": "2024-02-27",
+  "vote_average": 8.1,
+  "homepage": "https://www.dunemovie.com",
+  "poster_path": "/1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg",
+  "genres": [
+    {
+      "name": "Science Fiction"
+    },
+    {
+      "name": "Adventure"
+    }
+  ],
+  "production_countries": [
+    {
+      "name": "United States of America"
+    }
+  ],
+  "credits": {
+    "cast": [
+      {
+        "name": "Timothée Chalamet"
+      },
+      {
+        "name": "Zendaya"
+      }
+    ],
+    "crew": [
+      {
+        "job": "Director",
+        "name": "Denis Villeneuve"
+      },
+      {
+        "job": "Screenplay",
+        "name": "Jon Spaihts"
+      },
+      {
+        "job": "Producer",
+        "name": "Mary Parent"
+      }
+    ]
+  },
+  "external_ids": {
+    "imdb_id": "tt15239678"
+  },
+  "release_dates": {
+    "results": [
+      {
+        "iso_3166_1": "US",
+        "release_dates": [
+          {
+            "certification": "PG-13"
+          }
+        ]
+      }
+    ]
+  },
+  "videos": {
+    "results": [
+      {
+        "site": "YouTube",
+        "type": "Trailer",
+        "official": true,
+        "key": "Way9Dexny3w"
+      }
+    ]
+  }
+}
