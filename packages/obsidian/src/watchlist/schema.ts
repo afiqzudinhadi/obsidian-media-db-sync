@@ -1,0 +1,40 @@
+export type WatchCategory = 'Movie' | 'Series' | 'Anime';
+export type WatchMediaType = 'Movie' | 'TV Series';
+
+export interface WatchlistRecord {
+	title: string;
+	engName: string;
+	mediaType: WatchMediaType;
+	category: WatchCategory;
+	watchStatus: string;
+	rating: string;
+	ratingStars: string;
+	year: string;
+	runtime: number | null;
+	seasons: number | null;
+	episodes: number | null;
+	vod: string[];
+	genre: string[];
+	status: string;
+	language: string;
+	country: string;
+	director: string[];
+	writer: string[];
+	producer: string[];
+	contentRating: string;
+	tmdbRating: number | null;
+	tmdbId: string;
+	imdbId: string;
+	releaseDate: string | null;
+	lastAirDate: string | null;
+	nextAirDate: string | null;
+	lastEpisode: string | null;
+	upcomingEpisode: string | null;
+	poster: string | null;
+	trailer: string;
+	homepage: string;
+	imdbPage: string;
+	notionUrl: string;
+	synopsis: string;
+	cast: string;
+}
