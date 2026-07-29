@@ -3,7 +3,7 @@ import type { TFile, TFolder, App } from 'obsidian';
 import { requestUrl } from 'obsidian';
 import type { MediaTypeModel } from 'packages/obsidian/src/models/MediaTypeModel';
 
-export const pluginName: string = 'obsidian-media-db-plugin';
+export const pluginName: string = 'media-db-sync';
 export const contactEmail: string = 'm.projects.code@gmail.com';
 export const mediaDbTag: string = 'mediaDB';
 export const mediaDbVersion: string = '0.8.0';

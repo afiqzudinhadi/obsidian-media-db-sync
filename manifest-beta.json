@@ -1,11 +1,10 @@
 {
-	"id": "obsidian-media-db-plugin",
-	"name": "Media DB",
-	"version": "0.8.0-canary.20260703T094912",
+	"id": "media-db-sync",
+	"name": "Media DB Sync",
+	"version": "0.1.0-beta.1",
 	"minAppVersion": "1.12.0",
-	"description": "A plugin that can query multiple APIs for movies, series, anime, games, music and wiki articles, and import them into your vault.",
-	"author": "Moritz Jung",
-	"authorUrl": "https://www.moritzjung.dev",
-	"fundingUrl": "https://github.com/sponsors/mProjectsCode",
+	"description": "Media library with automatic metadata enrichment, periodic sync, and watch-status automation. Fork of Media DB by Moritz Jung.",
+	"author": "Afiq Zudin Hadi",
+	"authorUrl": "https://github.com/afiqzudinhadi",
 	"isDesktopOnly": false
 }
