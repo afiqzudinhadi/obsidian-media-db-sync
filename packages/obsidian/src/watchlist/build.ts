@@ -117,8 +117,9 @@ export function buildRecord(details: TmdbDetail, isMovie: boolean, prev: Record<
 		runtime = rt.length > 0 ? rt[0] : null;
 		status = details.status ?? '';
 		contentRating = usCertFromContentRatings(details.content_ratings ?? {});
-		const countries: string[] = details.origin_country ?? [];
-		country = countries[0] ?? '';
+		const prodCountries: any[] = details.production_countries ?? [];
+		const originCountries: string[] = details.origin_country ?? [];
+		country = prodCountries[0]?.name ?? originCountries[0] ?? '';
 		seasons = details.number_of_seasons ?? null;
 		episodes = details.number_of_episodes ?? null;
 		vod = (details.networks ?? []).map((n: any) => n.name);
@@ -166,7 +167,7 @@ export function buildRecord(details: TmdbDetail, isMovie: boolean, prev: Record<
 		watchStatus, rating, ratingStars,
 		year: yearDisp, runtime, seasons, episodes, vod, genre: genres, status,
 		language, country, director, writer, producer, contentRating,
-		tmdbRating: details.vote_average ?? null, tmdbId: String(details.id),
+		tmdbRating: details.vote_average != null ? Math.round(details.vote_average * 10) / 10 : null, tmdbId: String(details.id),
 		imdbId, releaseDate, lastAirDate, nextAirDate, lastEpisode, upcomingEpisode: upEpisode,
 		poster, trailer, homepage: details.homepage ?? '',
 		imdbPage: imdbId ? `https://www.imdb.com/title/${imdbId}/` : '',

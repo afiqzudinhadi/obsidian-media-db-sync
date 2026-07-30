@@ -136,6 +136,33 @@ describe('TV crew preservation', () => {
 	});
 });
 
+describe('TV country derivation', () => {
+	test('prefers production_countries full name over raw origin_country code', () => {
+		const r = buildRecord(tvDetail, false, EMPTY_PREV);
+		expect(r.country).toBe('United States of America');
+	});
+	test('no production_countries → falls back to raw origin_country code', () => {
+		const { production_countries, ...noProdCountries } = tvDetail as any;
+		const r = buildRecord(noProdCountries, false, EMPTY_PREV);
+		expect(r.country).toBe('US');
+	});
+});
+
+describe('tmdb_rating rounding', () => {
+	test('6.537 → 6.5', () => {
+		expect(buildRecord({ ...tvDetail, vote_average: 6.537 }, false, EMPTY_PREV).tmdbRating).toBe(6.5);
+	});
+	test('7.854 → 7.9', () => {
+		expect(buildRecord({ ...tvDetail, vote_average: 7.854 }, false, EMPTY_PREV).tmdbRating).toBe(7.9);
+	});
+	test('8.2 → 8.2 (unaffected)', () => {
+		expect(buildRecord(tvDetail, false, EMPTY_PREV).tmdbRating).toBe(8.2);
+	});
+	test('null → null', () => {
+		expect(buildRecord({ ...tvDetail, vote_average: null }, false, EMPTY_PREV).tmdbRating).toBeNull();
+	});
+});
+
 describe('eng_name derivation', () => {
 	test('non-Latin original → engName = localized title', () => {
 		const jp = { ...movieDetail, title: 'A Silent Voice: The Movie', original_title: '映画 聲の形' };
