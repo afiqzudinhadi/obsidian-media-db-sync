@@ -18,8 +18,8 @@ async function tryOne(query: string, isMovie: boolean, year: string | undefined,
 	const results = await search(query, isMovie, year);
 	if (results.length === 0) return null;
 	const q = query.toLowerCase();
-	const exact = results.find(r => resultTitles(r).includes(q));
-	const pick = exact ?? (results.length === 1 ? results[0] : null);
+	const exacts = results.filter(r => resultTitles(r).includes(q));
+	const pick = exacts.length === 1 ? exacts[0] : exacts.length === 0 && results.length === 1 ? results[0] : null;
 	if (!pick) return null;
 	return { tmdbId: String(pick.id), isMovie, matchedTitle: resultTitle(pick) };
 }

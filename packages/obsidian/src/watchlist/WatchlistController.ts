@@ -1,6 +1,6 @@
 import { Notice, TFile, TFolder } from 'obsidian';
 import type MediaDbPlugin from 'packages/obsidian/src/main';
-import { syncFolder, TmdbRateLimitError, type SyncDeps, type SyncReport } from 'packages/obsidian/src/watchlist/SyncEngine';
+import { syncFolder, withRateLimitRetry, TmdbRateLimitError, type SyncDeps, type SyncReport } from 'packages/obsidian/src/watchlist/SyncEngine';
 import { fetchDetail, searchTitle, type HttpJsonFn } from 'packages/obsidian/src/watchlist/tmdb';
 import { obsidianFetch } from 'packages/obsidian/src/utils/Utils';
 import { parseNote, noteTmdbRef, stripQuotes } from 'packages/obsidian/src/watchlist/parse';
@@ -111,7 +111,7 @@ export class WatchlistController {
 			report.scanned++;
 			try {
 				const filename = note.path.split('/').pop() ?? note.path;
-				const result = await resolveNote(frontmatter, filename, search);
+				const result = await withRateLimitRetry(() => resolveNote(frontmatter, filename, search), deps.sleep);
 				if (!result) {
 					report.ambiguous++;
 					deps.log(`ambiguous/no match: ${note.path}`);

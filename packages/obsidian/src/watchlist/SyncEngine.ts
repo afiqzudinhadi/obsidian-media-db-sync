@@ -30,6 +30,18 @@ export class TmdbRateLimitError extends Error {
 	retryAfterMs: number = 2000;
 }
 
+export async function withRateLimitRetry<T>(fn: () => Promise<T>, sleep: (ms: number) => Promise<void>): Promise<T> {
+	try {
+		return await fn();
+	} catch (e) {
+		if (e instanceof TmdbRateLimitError) {
+			await sleep(e.retryAfterMs);
+			return await fn();
+		}
+		throw e;
+	}
+}
+
 const ACTIVE_STATUSES = new Set(['Returning Series', 'In Production', 'Planned', 'Pilot']);
 
 function strip(s: string | undefined): string {
@@ -63,17 +75,7 @@ export async function syncFolder(deps: SyncDeps, opts: SyncOptions = {}): Promis
 			continue;
 		}
 		try {
-			let detail: any;
-			try {
-				detail = await deps.fetchDetail(ref.tmdbId, ref.isMovie);
-			} catch (e) {
-				if (e instanceof TmdbRateLimitError) {
-					await deps.sleep(e.retryAfterMs);
-					detail = await deps.fetchDetail(ref.tmdbId, ref.isMovie);
-				} else {
-					throw e;
-				}
-			}
+			const detail: any = await withRateLimitRetry(() => deps.fetchDetail(ref.tmdbId, ref.isMovie), deps.sleep);
 			const record = buildRecord(detail, ref.isMovie, frontmatter);
 			const rendered = renderNote(record, extractMyNotes(body));
 			report.synced++;

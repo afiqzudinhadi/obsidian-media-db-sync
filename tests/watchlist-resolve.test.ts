@@ -34,4 +34,16 @@ describe('resolveNote', () => {
 		});
 		expect(seenYear).toBe('2024');
 	});
+	test('two exact matches (same title, different ids) → null (ambiguous)', async () => {
+		const RH1 = { id: 1, title: 'Robin Hood', original_title: 'Robin Hood' };
+		const RH2 = { id: 2, title: 'Robin Hood', original_title: 'Robin Hood' };
+		const r = await resolveNote({ media_type: 'Movie' }, 'Robin Hood.md', async () => [RH1, RH2]);
+		expect(r).toBeNull();
+	});
+	test('exact match at non-top index, unique → accepted', async () => {
+		const NOPE = { id: 9, title: 'Robin Hood Begins', original_title: 'Robin Hood Begins' };
+		const HIT2 = { id: 10, title: 'Robin Hood', original_title: 'Robin Hood' };
+		const r = await resolveNote({ media_type: 'Movie' }, 'Robin Hood.md', async () => [NOPE, HIT2]);
+		expect(r).toEqual({ tmdbId: '10', isMovie: true, matchedTitle: 'Robin Hood' });
+	});
 });

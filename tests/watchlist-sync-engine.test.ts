@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { syncFolder, isActive, TmdbRateLimitError, type SyncDeps } from 'packages/obsidian/src/watchlist/SyncEngine';
+import { syncFolder, isActive, TmdbRateLimitError, withRateLimitRetry, type SyncDeps } from 'packages/obsidian/src/watchlist/SyncEngine';
 import tvDetail from 'tests/fixtures/tmdb-tv-loki.json';
 
 const ENDED_NOTE = `---
@@ -34,6 +34,46 @@ function makeDeps(notes: { path: string; content: string }[], detail: any = tvDe
 	};
 	return { deps, writes, fetches };
 }
+
+describe('withRateLimitRetry', () => {
+	test('429 → sleep(retryAfterMs) then retry once, returns result', async () => {
+		const slept: number[] = [];
+		let calls = 0;
+		const fn = async () => {
+			calls++;
+			if (calls === 1) {
+				const e = new TmdbRateLimitError('429');
+				e.retryAfterMs = 1500;
+				throw e;
+			}
+			return 'ok';
+		};
+		const result = await withRateLimitRetry(fn, async ms => { slept.push(ms); });
+		expect(slept).toEqual([1500]);
+		expect(calls).toBe(2);
+		expect(result).toBe('ok');
+	});
+	test('non-429 error → no retry, throws immediately', async () => {
+		let calls = 0;
+		const fn = async () => {
+			calls++;
+			throw new Error('boom');
+		};
+		await expect(withRateLimitRetry(fn, async () => {})).rejects.toThrow('boom');
+		expect(calls).toBe(1);
+	});
+	test('429 twice → second failure propagates (retry only once)', async () => {
+		let calls = 0;
+		const fn = async () => {
+			calls++;
+			const e = new TmdbRateLimitError('429');
+			e.retryAfterMs = 500;
+			throw e;
+		};
+		await expect(withRateLimitRetry(fn, async () => {})).rejects.toBeInstanceOf(TmdbRateLimitError);
+		expect(calls).toBe(2);
+	});
+});
 
 describe('isActive tiering', () => {
 	test('Returning Series → active', () => expect(isActive({ status: 'Returning Series' })).toBe(true));
