@@ -1,7 +1,7 @@
 {
 	"name": "media-db-sync",
 	"version": "0.1.0",
-	"description": "A plugin that can query multiple APIs for movies, series, anime, manga, books, comics, games, music and wiki articles, and import them into your vault.",
+	"description": "Media library with automatic metadata enrichment, periodic sync, and watch-status automation. Fork of Media DB by Moritz Jung.",
 	"main": "main.js",
 	"scripts": {
 		"dev": "vite build --watch --mode development",
@@ -18,7 +18,7 @@
 		"release": "lemons-automation release"
 	},
 	"keywords": [],
-	"author": "Moritz Jung",
+	"author": "Afiq Zudin Hadi",
 	"license": "GPL-3.0",
 	"devDependencies": {
 		"@happy-dom/global-registrator": "^20.10.4",
