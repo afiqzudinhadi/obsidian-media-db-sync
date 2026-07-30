@@ -22,6 +22,37 @@ export function extractMyNotes(body: string): string {
 	return m ? m[1].trim() : '';
 }
 
+const OWNED_HEADINGS = new Set(['Synopsis', 'Cast', 'Links', 'My Notes']);
+
+export interface CustomSection {
+	heading: string;
+	content: string;
+}
+
+export function extractCustomSections(body: string): CustomSection[] {
+	const lines = (body ?? '').split('\n');
+	const sections: CustomSection[] = [];
+	let heading: string | null = null;
+	let buf: string[] = [];
+	const flush = (): void => {
+		if (heading === null) return;
+		const content = buf.join('\n').replace(/(\n\s*)+$/, '');
+		if (!OWNED_HEADINGS.has(heading)) sections.push({ heading, content });
+	};
+	for (const line of lines) {
+		const m = /^##\s+(.*)$/.exec(line);
+		if (m) {
+			flush();
+			heading = m[1].trim();
+			buf = [];
+		} else if (heading !== null) {
+			buf.push(line);
+		}
+	}
+	flush();
+	return sections;
+}
+
 export function stripQuotes(s: string | undefined): string {
 	return (s ?? '').trim().replace(/^"|"$/g, '');
 }

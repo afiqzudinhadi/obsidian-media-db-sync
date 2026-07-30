@@ -37,3 +37,28 @@ describe('renderNote golden', () => {
 		expect(renderNote(r, '')).not.toContain('**Rating:**');
 	});
 });
+
+describe('renderNote custom sections', () => {
+	test('no custom sections → output unchanged (golden)', () => {
+		const expected = readFileSync(join(import.meta.dir, 'fixtures', 'canonical-series.md'), 'utf-8');
+		expect(renderNote(LOKI, '', [])).toBe(expected);
+	});
+	test('single custom section placed after Links, before My Notes', () => {
+		const out = renderNote(LOKI, '', [{ heading: 'Collection', content: 'Part of [[Movies]]' }]);
+		const linksIdx = out.indexOf('## Links');
+		const collectionIdx = out.indexOf('## Collection');
+		const myNotesIdx = out.indexOf('## My Notes');
+		expect(linksIdx).toBeGreaterThan(-1);
+		expect(collectionIdx).toBeGreaterThan(linksIdx);
+		expect(myNotesIdx).toBeGreaterThan(collectionIdx);
+		expect(out).toContain('## Collection\nPart of [[Movies]]\n');
+	});
+	test('multiple custom sections keep relative order', () => {
+		const out = renderNote(LOKI, '', [
+			{ heading: 'Collection', content: 'Part of [[Movies]]' },
+			{ heading: 'Rewatch Log', content: '- 2024-01-01' },
+		]);
+		expect(out.indexOf('## Collection')).toBeLessThan(out.indexOf('## Rewatch Log'));
+		expect(out.indexOf('## Rewatch Log')).toBeLessThan(out.indexOf('## My Notes'));
+	});
+});

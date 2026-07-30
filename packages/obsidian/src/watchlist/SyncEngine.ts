@@ -1,4 +1,4 @@
-import { parseNote, extractMyNotes, noteTmdbRef } from 'packages/obsidian/src/watchlist/parse';
+import { parseNote, extractMyNotes, extractCustomSections, noteTmdbRef } from 'packages/obsidian/src/watchlist/parse';
 import { buildRecord } from 'packages/obsidian/src/watchlist/build';
 import { renderNote } from 'packages/obsidian/src/watchlist/render';
 
@@ -80,7 +80,7 @@ export async function syncFolder(deps: SyncDeps, opts: SyncOptions = {}): Promis
 			}
 			const detail: any = await withRateLimitRetry(() => deps.fetchDetail(ref.tmdbId, ref.isMovie), deps.sleep);
 			const record = buildRecord(detail, ref.isMovie, frontmatter);
-			const rendered = renderNote(record, extractMyNotes(body));
+			const rendered = renderNote(record, extractMyNotes(body), extractCustomSections(body));
 			report.synced++;
 			if (strip(frontmatter['watch_status']) === 'Watched' && record.watchStatus === 'Unwatched') {
 				report.flipped.push(note.path);

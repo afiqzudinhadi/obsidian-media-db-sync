@@ -1,9 +1,10 @@
 import type { WatchlistRecord } from 'packages/obsidian/src/watchlist/schema';
 import { yamlList, yamlScalar, quotedOrNull } from 'packages/obsidian/src/watchlist/yaml';
+import type { CustomSection } from 'packages/obsidian/src/watchlist/parse';
 
 const CATEGORY_TAG: Record<string, string> = { Movie: 'movie', Series: 'series', Anime: 'anime' };
 
-export function renderNote(r: WatchlistRecord, myNotes: string): string {
+export function renderNote(r: WatchlistRecord, myNotes: string, customSections: CustomSection[] = []): string {
 	const tag = CATEGORY_TAG[r.category];
 	const stars = r.ratingStars;
 	const fm = [
@@ -67,6 +68,7 @@ export function renderNote(r: WatchlistRecord, myNotes: string): string {
 	if (r.homepage) links.push(`- [Homepage](${r.homepage})`);
 	if (r.notionUrl) links.push(`- [Original Notion entry](${r.notionUrl})`);
 	if (links.length) b.push('## Links', ...links, '');
+	for (const s of customSections) b.push(`## ${s.heading}`, s.content, '');
 	b.push('## My Notes', '', myNotes);
 	if (myNotes) b.push('');
 	return fm.join('\n') + '\n' + b.join('\n');

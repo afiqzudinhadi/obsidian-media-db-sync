@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseNote, extractMyNotes, noteTmdbRef } from 'packages/obsidian/src/watchlist/parse';
+import { parseNote, extractMyNotes, noteTmdbRef, extractCustomSections } from 'packages/obsidian/src/watchlist/parse';
 
 const NOTE = `---
 type: watchlist_item
@@ -53,5 +53,34 @@ describe('noteTmdbRef', () => {
 	});
 	test('no id → null', () => {
 		expect(noteTmdbRef({ type: 'list' })).toBeNull();
+	});
+});
+
+describe('extractCustomSections', () => {
+	test('extracts non-owned section', () => {
+		const body = `\n# Loki\n\n## Links\n- [IMDb](x)\n\n## Collection\nPart of [[Movies]]\n\n## My Notes\n\ngreat finale\n`;
+		expect(extractCustomSections(body)).toEqual([{ heading: 'Collection', content: 'Part of [[Movies]]' }]);
+	});
+	test('owned headings excluded (Synopsis, Cast, Links, My Notes)', () => {
+		const body = `\n## Synopsis\nblah\n\n## Cast\nA, B\n\n## Links\n- x\n\n## My Notes\n\nnote\n`;
+		expect(extractCustomSections(body)).toEqual([]);
+	});
+	test('two custom sections keep order', () => {
+		const body = `\n## Collection\nPart of [[Movies]]\n\n## Rewatch Log\n- 2024-01-01\n- 2025-02-02\n\n## My Notes\n\nnote\n`;
+		expect(extractCustomSections(body)).toEqual([
+			{ heading: 'Collection', content: 'Part of [[Movies]]' },
+			{ heading: 'Rewatch Log', content: '- 2024-01-01\n- 2025-02-02' },
+		]);
+	});
+	test('preserves internal blank lines, trims trailing', () => {
+		const body = `\n## Collection\nline one\n\nline two\n\n\n## My Notes\n\nnote\n`;
+		expect(extractCustomSections(body)).toEqual([{ heading: 'Collection', content: 'line one\n\nline two' }]);
+	});
+	test('no custom sections → empty array', () => {
+		const body = `\n# Loki\n\n## Links\n- x\n\n## My Notes\n\nnote\n`;
+		expect(extractCustomSections(body)).toEqual([]);
+	});
+	test('empty/missing body → empty array', () => {
+		expect(extractCustomSections('')).toEqual([]);
 	});
 });

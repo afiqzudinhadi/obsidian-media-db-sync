@@ -22,6 +22,13 @@ keep me
 
 const AIRING_NOTE = ENDED_NOTE.replace('status: Ended', 'status: Returning Series').replace('last_air_date: 2023-11-09', 'last_air_date: 2023-10-01');
 
+const NOTE_WITH_COLLECTION = ENDED_NOTE.replace('## My Notes', '## Collection\nPart of [[Movies]]\n\n## My Notes');
+
+const NOTE_WITH_TWO_CUSTOM_SECTIONS = ENDED_NOTE.replace(
+	'## My Notes',
+	'## Collection\nPart of [[Movies]]\n\n## Rewatch Log\n- 2024-01-01\n- 2025-02-02\n\n## My Notes',
+);
+
 function makeDeps(notes: { path: string; content: string }[], detail: any = tvDetail) {
 	const contents = new Map(notes.map(n => [n.path, n.content]));
 	const writes: { path: string; content: string }[] = [];
@@ -162,6 +169,38 @@ describe('syncFolder', () => {
 		expect(report.errors.length).toBe(1);
 		expect(report.errors[0].path).toBe('Bad.md');
 		expect(report.synced).toBe(1);
+	});
+	test('custom section round-trips through rewrite, positioned after Links and before My Notes', async () => {
+		const { deps, writes } = makeDeps([{ path: 'Loki.md', content: NOTE_WITH_COLLECTION }]);
+		await syncFolder(deps, { full: true });
+		const out = writes[0].content;
+		expect(out).toContain('## Collection\nPart of [[Movies]]\n');
+		const linksIdx = out.indexOf('## Links');
+		const collectionIdx = out.indexOf('## Collection');
+		const myNotesIdx = out.indexOf('## My Notes');
+		expect(collectionIdx).toBeGreaterThan(linksIdx);
+		expect(myNotesIdx).toBeGreaterThan(collectionIdx);
+	});
+	test('two custom sections keep relative order through rewrite', async () => {
+		const { deps, writes } = makeDeps([{ path: 'Loki.md', content: NOTE_WITH_TWO_CUSTOM_SECTIONS }]);
+		await syncFolder(deps, { full: true });
+		const out = writes[0].content;
+		expect(out.indexOf('## Collection')).toBeLessThan(out.indexOf('## Rewatch Log'));
+		expect(out.indexOf('## Rewatch Log')).toBeLessThan(out.indexOf('## My Notes'));
+	});
+	test('idempotence: custom section stable across two sync passes (render→parse→extract→render byte-identical)', async () => {
+		const { deps, writes } = makeDeps([{ path: 'Loki.md', content: NOTE_WITH_COLLECTION }]);
+		await syncFolder(deps, { full: true });
+		const rendered = writes[0].content;
+		const second = makeDeps([{ path: 'Loki.md', content: rendered }]);
+		const report = await syncFolder(second.deps, { full: true });
+		expect(second.writes.length).toBe(0);
+		expect(report.written).toBe(0);
+	});
+	test('golden: note with no custom sections unaffected by custom-section plumbing', async () => {
+		const { deps, writes } = makeDeps([{ path: 'Loki.md', content: ENDED_NOTE }]);
+		await syncFolder(deps, { full: true });
+		expect(writes[0].content).not.toContain('## Collection');
 	});
 	test('stale-read guard: content edited mid-sync is re-read fresh, not clobbered by early snapshot', async () => {
 		const { deps, writes, contents } = makeDeps([
