@@ -119,6 +119,11 @@ export interface MediaDbPluginSettings {
 
 	propertyMappingModels: PropertyMappingModelData[];
 
+	watchlistEnabled: boolean;
+	watchlistFolder: string;
+	watchlistSyncIntervalHours: number;
+	watchlistLastSync: number;
+
 	// DEPRECATED: Use propertyMappingModels instead
 	moviePropertyConversionRules: string;
 	seriesPropertyConversionRules: string;
@@ -377,6 +382,11 @@ const DEFAULT_SETTINGS: MediaDbPluginSettings = {
 	bookFolder: 'Media DB/books',
 
 	propertyMappingModels: [],
+
+	watchlistEnabled: false,
+	watchlistFolder: 'Watchlist',
+	watchlistSyncIntervalHours: 24,
+	watchlistLastSync: 0,
 
 	// DEPRECATED
 	moviePropertyConversionRules: '',
@@ -722,6 +732,62 @@ export class MediaDbSettingTab extends PluginSettingTab {
 						});
 
 						return component;
+					}),
+		);
+
+		// MARK: Watchlist sync
+		const watchlistGroup = new SettingGroup(containerEl);
+		watchlistGroup.setHeading('Watchlist sync');
+
+		watchlistGroup.addSetting(
+			setting =>
+				void setting
+					.setName('Enable watchlist sync')
+					.setDesc('Periodically sync TV/movie watchlist notes against TMDB. Uses the TMDB API key configured above.')
+					.addToggle(cb => {
+						cb.setValue(this.plugin.settings.watchlistEnabled).onChange(data => {
+							this.plugin.settings.watchlistEnabled = data;
+							void this.plugin.saveSettings();
+						});
+					}),
+		);
+
+		watchlistGroup.addSetting(
+			setting =>
+				void setting
+					.setName('Watchlist folder')
+					.setDesc('Folder containing watchlist notes.')
+					.addSearch(cb => {
+						const suggester = new FolderSuggest(this.app, cb.inputEl);
+						suggester.onSelect(folder => {
+							cb.setValue(folder.path);
+							this.plugin.settings.watchlistFolder = folder.path;
+							void this.plugin.saveSettings();
+							suggester.close();
+						});
+						cb.setPlaceholder(DEFAULT_SETTINGS.watchlistFolder)
+							.setValue(this.plugin.settings.watchlistFolder)
+							.onChange(data => {
+								this.plugin.settings.watchlistFolder = data;
+								void this.plugin.saveSettings();
+							});
+					}),
+		);
+
+		watchlistGroup.addSetting(
+			setting =>
+				void setting
+					.setName('Sync interval (hours)')
+					.setDesc('How often to auto-sync the watchlist, in hours (1–168).')
+					.addText(cb => {
+						cb.setPlaceholder(String(DEFAULT_SETTINGS.watchlistSyncIntervalHours))
+							.setValue(String(this.plugin.settings.watchlistSyncIntervalHours))
+							.onChange(data => {
+								const parsed = Math.min(168, Math.max(1, Math.round(Number(data))));
+								if (!Number.isFinite(parsed)) return;
+								this.plugin.settings.watchlistSyncIntervalHours = parsed;
+								void this.plugin.saveSettings();
+							});
 					}),
 		);
 

@@ -32,6 +32,7 @@ import { MediaTypeManager } from 'packages/obsidian/src/utils/MediaTypeManager';
 import { MEDIA_TYPES } from 'packages/obsidian/src/utils/MediaTypeManager';
 import { ModalHelper } from 'packages/obsidian/src/utils/ModalHelper';
 import { unCamelCase } from 'packages/obsidian/src/utils/Utils';
+import { WatchlistController } from 'packages/obsidian/src/watchlist/WatchlistController';
 
 export default class MediaDbPlugin extends Plugin {
 	declare settings: MediaDbPluginSettings;
@@ -44,6 +45,7 @@ export default class MediaDbPlugin extends Plugin {
 	bulkImportHelper!: BulkImportHelper;
 	dateFormatter!: DateFormatter;
 	errorReporter!: ErrorReporter;
+	watchlist!: WatchlistController;
 
 	async onload(): Promise<void> {
 		this.mediaTypeManager = new MediaTypeManager();
@@ -60,6 +62,11 @@ export default class MediaDbPlugin extends Plugin {
 		this.addSettingTab(new MediaDbSettingTab(this.app, this));
 		this.registerRibbonAndFileMenu();
 		this.registerCommands();
+
+		this.watchlist = new WatchlistController(this);
+		// catch-up shortly after startup (let vault index settle), then hourly due-check
+		window.setTimeout(() => void this.watchlist.maybeCatchUp(), 30_000);
+		this.registerInterval(window.setInterval(() => void this.watchlist.maybeCatchUp(), 3600_000));
 	}
 
 	onunload(): void {}
@@ -167,6 +174,22 @@ export default class MediaDbPlugin extends Plugin {
 				}
 				return true;
 			},
+		});
+
+		this.addCommand({
+			id: 'watchlist-sync-now',
+			name: 'Watchlist: sync now (airing/active only)',
+			callback: () => void this.watchlist.syncNow(false),
+		});
+		this.addCommand({
+			id: 'watchlist-sync-full',
+			name: 'Watchlist: full sync (all entries)',
+			callback: () => void this.watchlist.syncNow(true),
+		});
+		this.addCommand({
+			id: 'watchlist-sync-dry-run',
+			name: 'Watchlist: dry-run full sync (log only, no writes)',
+			callback: () => void this.watchlist.syncNow(true, true),
 		});
 	}
 
