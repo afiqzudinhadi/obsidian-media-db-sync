@@ -1,5 +1,5 @@
 import 'packages/obsidian/src/styles.css';
-import { Plugin, TFolder } from 'obsidian';
+import { Notice, Plugin, TFolder } from 'obsidian';
 import { APIManager } from 'packages/obsidian/src/api/APIManager';
 import { BoardGameGeekAPI } from 'packages/obsidian/src/api/apis/BoardGameGeekAPI';
 import { ComicVineAPI } from 'packages/obsidian/src/api/apis/ComicVineAPI';
@@ -179,17 +179,17 @@ export default class MediaDbPlugin extends Plugin {
 		this.addCommand({
 			id: 'watchlist-sync-now',
 			name: 'Watchlist: sync now (airing/active only)',
-			callback: () => void this.watchlist.syncNow(false),
+			callback: () => void this.watchlist.syncNow(false).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e))),
 		});
 		this.addCommand({
 			id: 'watchlist-sync-full',
 			name: 'Watchlist: full sync (all entries)',
-			callback: () => void this.watchlist.syncNow(true),
+			callback: () => void this.watchlist.syncNow(true).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e))),
 		});
 		this.addCommand({
 			id: 'watchlist-sync-dry-run',
 			name: 'Watchlist: dry-run full sync (log only, no writes)',
-			callback: () => void this.watchlist.syncNow(true, true),
+			callback: () => void this.watchlist.syncNow(true, true).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e))),
 		});
 	}
 
