@@ -191,6 +191,11 @@ export default class MediaDbPlugin extends Plugin {
 			name: 'Watchlist: dry-run full sync (log only, no writes)',
 			callback: () => void this.watchlist.syncNow(true, true).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e))),
 		});
+		this.addCommand({
+			id: 'watchlist-resolve-ids',
+			name: 'Watchlist: resolve missing TMDB ids',
+			callback: () => void this.watchlist.resolveMissingIds().catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e))),
+		});
 	}
 
 	private getLegacyApiKeyEntries(diskSettings: Record<string, unknown>): LegacyApiKeyEntry[] {
