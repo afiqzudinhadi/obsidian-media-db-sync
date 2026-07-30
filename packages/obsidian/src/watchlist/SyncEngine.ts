@@ -3,7 +3,8 @@ import { buildRecord } from 'packages/obsidian/src/watchlist/build';
 import { renderNote } from 'packages/obsidian/src/watchlist/render';
 
 export interface SyncDeps {
-	listNotes(): Promise<{ path: string; content: string }[]>;
+	listNotes(): Promise<{ path: string }[]>;
+	readNote(path: string): Promise<string>;
 	writeNote(path: string, content: string): Promise<void>;
 	fetchDetail(tmdbId: string, isMovie: boolean): Promise<any>;
 	sleep(ms: number): Promise<void>;
@@ -64,17 +65,19 @@ export async function syncFolder(deps: SyncDeps, opts: SyncOptions = {}): Promis
 	const notes = await deps.listNotes();
 	for (const note of notes) {
 		report.scanned++;
-		const { frontmatter, body } = parseNote(note.content);
-		const ref = noteTmdbRef(frontmatter);
-		if (!ref) {
-			report.skippedNoId++;
-			continue;
-		}
-		if (!opts.full && !isActive(frontmatter)) {
-			report.skippedStatic++;
-			continue;
-		}
 		try {
+			// Read immediately before parse/diff so mid-sync edits aren't clobbered by a stale snapshot.
+			const content = await deps.readNote(note.path);
+			const { frontmatter, body } = parseNote(content);
+			const ref = noteTmdbRef(frontmatter);
+			if (!ref) {
+				report.skippedNoId++;
+				continue;
+			}
+			if (!opts.full && !isActive(frontmatter)) {
+				report.skippedStatic++;
+				continue;
+			}
 			const detail: any = await withRateLimitRetry(() => deps.fetchDetail(ref.tmdbId, ref.isMovie), deps.sleep);
 			const record = buildRecord(detail, ref.isMovie, frontmatter);
 			const rendered = renderNote(record, extractMyNotes(body));
@@ -82,7 +85,7 @@ export async function syncFolder(deps: SyncDeps, opts: SyncOptions = {}): Promis
 			if (strip(frontmatter['watch_status']) === 'Watched' && record.watchStatus === 'Unwatched') {
 				report.flipped.push(note.path);
 			}
-			if (rendered !== note.content) {
+			if (rendered !== content) {
 				report.written++;
 				if (!opts.dryRun) await deps.writeNote(note.path, rendered);
 				deps.log(`${opts.dryRun ? '[dry] ' : ''}updated ${note.path}`);

@@ -23,16 +23,18 @@ keep me
 const AIRING_NOTE = ENDED_NOTE.replace('status: Ended', 'status: Returning Series').replace('last_air_date: 2023-11-09', 'last_air_date: 2023-10-01');
 
 function makeDeps(notes: { path: string; content: string }[], detail: any = tvDetail) {
+	const contents = new Map(notes.map(n => [n.path, n.content]));
 	const writes: { path: string; content: string }[] = [];
 	const fetches: string[] = [];
 	const deps: SyncDeps = {
-		listNotes: async () => notes,
+		listNotes: async () => notes.map(n => ({ path: n.path })),
+		readNote: async path => contents.get(path)!,
 		writeNote: async (path, content) => { writes.push({ path, content }); },
 		fetchDetail: async (id) => { fetches.push(id); return detail; },
 		sleep: async () => {},
 		log: () => {},
 	};
-	return { deps, writes, fetches };
+	return { deps, writes, fetches, contents };
 }
 
 describe('withRateLimitRetry', () => {
@@ -133,7 +135,8 @@ describe('syncFolder', () => {
 		let calls = 0;
 		const slept: number[] = [];
 		const deps: SyncDeps = {
-			listNotes: async () => [{ path: 'Loki.md', content: AIRING_NOTE }],
+			listNotes: async () => [{ path: 'Loki.md' }],
+			readNote: async () => AIRING_NOTE,
 			writeNote: async () => {},
 			fetchDetail: async () => {
 				calls++;
@@ -159,5 +162,26 @@ describe('syncFolder', () => {
 		expect(report.errors.length).toBe(1);
 		expect(report.errors[0].path).toBe('Bad.md');
 		expect(report.synced).toBe(1);
+	});
+	test('stale-read guard: content edited mid-sync is re-read fresh, not clobbered by early snapshot', async () => {
+		const { deps, writes, contents } = makeDeps([
+			{ path: 'A.md', content: AIRING_NOTE },
+			{ path: 'B.md', content: AIRING_NOTE },
+		]);
+		const originalFetch = deps.fetchDetail;
+		let calls = 0;
+		deps.fetchDetail = async (id, isMovie) => {
+			calls++;
+			if (calls === 1) {
+				// simulate the user editing B.md's "My Notes" while A.md is still mid-sync,
+				// i.e. after listNotes() ran but before B.md is actually processed.
+				contents.set('B.md', AIRING_NOTE.replace('keep me', 'edited during sync'));
+			}
+			return originalFetch(id, isMovie);
+		};
+		await syncFolder(deps);
+		const bWrite = writes.find(w => w.path === 'B.md');
+		expect(bWrite?.content).toContain('edited during sync');
+		expect(bWrite?.content).not.toContain('keep me');
 	});
 });

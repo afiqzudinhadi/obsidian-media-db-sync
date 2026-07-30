@@ -25,7 +25,13 @@ function patchFrontmatter(content: string, tmdbId: string, mediaType: string): s
 	return `---\ntype: watchlist_item\n${insert}\n---\n\n` + content;
 }
 
+export function shouldNotifySync(quiet: boolean, written: number, errorCount: number): boolean {
+	return !quiet || written > 0 || errorCount > 0;
+}
+
 export class WatchlistController {
+	private syncing = false;
+
 	constructor(private plugin: MediaDbPlugin) {}
 
 	private getKey(): string {
@@ -40,8 +46,8 @@ export class WatchlistController {
 			const res = await obsidianFetch(new Request(url, { headers }));
 			if (res.status === 429) {
 				const err = new TmdbRateLimitError('TMDB 429');
-				const ra = Number(res.headers.get('retry-after') ?? 2);
-				err.retryAfterMs = ra * 1000;
+				const ra = Number(res.headers.get('retry-after'));
+				err.retryAfterMs = Number.isFinite(ra) && ra > 0 ? ra * 1000 : 2000;
 				throw err;
 			}
 			if (res.status !== 200) throw new Error(`TMDB ${res.status} for ${url}`);
@@ -57,9 +63,12 @@ export class WatchlistController {
 			listNotes: async () => {
 				if (!(folder instanceof TFolder)) throw new Error(`Watchlist folder not found: ${this.plugin.settings.watchlistFolder}`);
 				const files = folder.children.filter((f): f is TFile => f instanceof TFile && f.extension === 'md' && !f.name.startsWith('_'));
-				const out: { path: string; content: string }[] = [];
-				for (const f of files) out.push({ path: f.path, content: await app.vault.read(f) });
-				return out;
+				return files.map(f => ({ path: f.path }));
+			},
+			readNote: async path => {
+				const f = app.vault.getAbstractFileByPath(path);
+				if (!(f instanceof TFile)) throw new Error(`Watchlist note not found: ${path}`);
+				return await app.vault.read(f);
 			},
 			writeNote: async (path, content) => {
 				const f = app.vault.getAbstractFileByPath(path);
@@ -71,19 +80,30 @@ export class WatchlistController {
 		};
 	}
 
-	async syncNow(full: boolean, dryRun = false): Promise<SyncReport> {
-		const key = this.getKey();
-		const report = await syncFolder(this.makeDeps(key), { full, dryRun });
-		const mode = dryRun ? 'DRY-RUN ' : '';
-		new Notice(
-			`Watchlist ${mode}sync: ${report.synced} checked, ${report.written} updated, ${report.flipped.length} flipped to Unwatched` +
-				(report.errors.length ? `, ${report.errors.length} errors (see console)` : ''),
-		);
-		if (!dryRun) {
-			this.plugin.settings.watchlistLastSync = Date.now();
-			await this.plugin.saveSettings();
+	async syncNow(full: boolean, dryRun = false, quiet = false): Promise<SyncReport> {
+		if (this.syncing) {
+			new Notice('Watchlist sync already running');
+			return { scanned: 0, synced: 0, written: 0, skippedNoId: 0, skippedStatic: 0, flipped: [], errors: [] };
 		}
-		return report;
+		this.syncing = true;
+		try {
+			const key = this.getKey();
+			const report = await syncFolder(this.makeDeps(key), { full, dryRun });
+			const mode = dryRun ? 'DRY-RUN ' : '';
+			if (shouldNotifySync(quiet, report.written, report.errors.length)) {
+				new Notice(
+					`Watchlist ${mode}sync: ${report.synced} checked, ${report.written} updated, ${report.flipped.length} flipped to Unwatched` +
+						(report.errors.length ? `, ${report.errors.length} errors (see console)` : ''),
+				);
+			}
+			if (!dryRun) {
+				this.plugin.settings.watchlistLastSync = Date.now();
+				await this.plugin.saveSettings();
+			}
+			return report;
+		} finally {
+			this.syncing = false;
+		}
 	}
 
 	async maybeCatchUp(): Promise<void> {
@@ -91,47 +111,57 @@ export class WatchlistController {
 		if (!s.watchlistEnabled) return;
 		const due = s.watchlistLastSync + s.watchlistSyncIntervalHours * 3600_000;
 		if (Date.now() >= due) {
-			await this.syncNow(false).catch(e => console.error('[media-db-sync] scheduled sync failed', e));
+			await this.syncNow(false, false, true).catch(e => console.error('[media-db-sync] scheduled sync failed', e));
 		}
 	}
 
 	async resolveMissingIds(dryRun = false): Promise<ResolveReport> {
-		const key = this.getKey();
-		const deps = this.makeDeps(key);
-		const http = this.makeHttp();
-		const search = (q: string, isMovie: boolean, year?: string) => searchTitle(http, key, q, isMovie, year);
-
-		const report: ResolveReport = { scanned: 0, resolved: 0, ambiguous: 0, errors: [] };
-		const notes = await deps.listNotes();
-		for (const note of notes) {
-			const { frontmatter } = parseNote(note.content);
-			if (noteTmdbRef(frontmatter)) continue;
-			const type = stripQuotes(frontmatter['type']);
-			if (type && type !== 'watchlist_item') continue; // skip type: list dashboards etc.
-			report.scanned++;
-			try {
-				const filename = note.path.split('/').pop() ?? note.path;
-				const result = await withRateLimitRetry(() => resolveNote(frontmatter, filename, search), deps.sleep);
-				if (!result) {
-					report.ambiguous++;
-					deps.log(`ambiguous/no match: ${note.path}`);
-				} else {
-					report.resolved++;
-					const mediaType = result.isMovie ? 'Movie' : 'TV Series';
-					deps.log(`${dryRun ? '[dry] ' : ''}resolved ${note.path} -> tmdb_id ${result.tmdbId} (${result.matchedTitle})`);
-					if (!dryRun) await deps.writeNote(note.path, patchFrontmatter(note.content, result.tmdbId, mediaType));
-				}
-				await deps.sleep(250);
-			} catch (e) {
-				report.errors.push({ path: note.path, error: e instanceof Error ? e.message : String(e) });
-				deps.log(`ERROR ${note.path}: ${String(e)}`);
-			}
+		if (this.syncing) {
+			new Notice('Watchlist sync already running');
+			return { scanned: 0, resolved: 0, ambiguous: 0, errors: [] };
 		}
-		const mode = dryRun ? 'DRY-RUN ' : '';
-		new Notice(
-			`Watchlist ${mode}resolve: ${report.scanned} scanned, ${report.resolved} resolved, ${report.ambiguous} ambiguous/no match` +
-				(report.errors.length ? `, ${report.errors.length} errors (see console)` : ''),
-		);
-		return report;
+		this.syncing = true;
+		try {
+			const key = this.getKey();
+			const deps = this.makeDeps(key);
+			const http = this.makeHttp();
+			const search = (q: string, isMovie: boolean, year?: string) => searchTitle(http, key, q, isMovie, year);
+
+			const report: ResolveReport = { scanned: 0, resolved: 0, ambiguous: 0, errors: [] };
+			const notes = await deps.listNotes();
+			for (const note of notes) {
+				const content = await deps.readNote(note.path);
+				const { frontmatter } = parseNote(content);
+				if (noteTmdbRef(frontmatter)) continue;
+				const type = stripQuotes(frontmatter['type']);
+				if (type && type !== 'watchlist_item') continue; // skip type: list dashboards etc.
+				report.scanned++;
+				try {
+					const filename = note.path.split('/').pop() ?? note.path;
+					const result = await withRateLimitRetry(() => resolveNote(frontmatter, filename, search), deps.sleep);
+					if (!result) {
+						report.ambiguous++;
+						deps.log(`ambiguous/no match: ${note.path}`);
+					} else {
+						report.resolved++;
+						const mediaType = result.isMovie ? 'Movie' : 'TV Series';
+						deps.log(`${dryRun ? '[dry] ' : ''}resolved ${note.path} -> tmdb_id ${result.tmdbId} (${result.matchedTitle})`);
+						if (!dryRun) await deps.writeNote(note.path, patchFrontmatter(content, result.tmdbId, mediaType));
+					}
+					await deps.sleep(250);
+				} catch (e) {
+					report.errors.push({ path: note.path, error: e instanceof Error ? e.message : String(e) });
+					deps.log(`ERROR ${note.path}: ${String(e)}`);
+				}
+			}
+			const mode = dryRun ? 'DRY-RUN ' : '';
+			new Notice(
+				`Watchlist ${mode}resolve: ${report.scanned} scanned, ${report.resolved} resolved, ${report.ambiguous} ambiguous/no match` +
+					(report.errors.length ? `, ${report.errors.length} errors (see console)` : ''),
+			);
+			return report;
+		} finally {
+			this.syncing = false;
+		}
 	}
 }

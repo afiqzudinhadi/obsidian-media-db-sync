@@ -65,7 +65,8 @@ export default class MediaDbPlugin extends Plugin {
 
 		this.watchlist = new WatchlistController(this);
 		// catch-up shortly after startup (let vault index settle), then hourly due-check
-		window.setTimeout(() => void this.watchlist.maybeCatchUp(), 30_000);
+		const catchUpTimeout = window.setTimeout(() => void this.watchlist.maybeCatchUp(), 30_000);
+		this.register(() => window.clearTimeout(catchUpTimeout));
 		this.registerInterval(window.setInterval(() => void this.watchlist.maybeCatchUp(), 3600_000));
 	}
 
@@ -92,7 +93,7 @@ export default class MediaDbPlugin extends Plugin {
 
 	private registerRibbonAndFileMenu(): void {
 		const ribbonIconEl = this.addRibbonIcon('database', 'Add new Media DB entry', () => this.entryHelper.createEntryWithAdvancedSearchModal());
-		ribbonIconEl.addClass('obsidian-media-db-plugin-ribbon-class');
+		ribbonIconEl.addClass('media-db-sync-ribbon-class');
 
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file) => {
