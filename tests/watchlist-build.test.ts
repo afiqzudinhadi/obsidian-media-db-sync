@@ -111,6 +111,31 @@ describe('watch-status rule (TV)', () => {
 	});
 });
 
+describe('TV crew preservation', () => {
+	test('TV + prev crew present → prev wins over created_by', () => {
+		const prev = {
+			director: '"Aaron Moorhead, Justin Benson"',
+			writer: 'Eric Martin',
+			producer: '"Rachel Alter, Tommy Turtle"',
+		};
+		const r = buildRecord(tvDetail, false, prev);
+		expect(r.director).toEqual(['Aaron Moorhead', 'Justin Benson']);
+		expect(r.writer).toEqual(['Eric Martin']);
+		expect(r.producer).toEqual(['Rachel Alter', 'Tommy Turtle']);
+	});
+	test('TV + empty prev crew → falls back to created_by', () => {
+		const r = buildRecord(tvDetail, false, EMPTY_PREV);
+		expect(r.director).toEqual(['Michael Waldron']);
+		expect(r.writer).toEqual(['Michael Waldron']);
+		expect(r.producer).toEqual([]);
+	});
+	test('Movie + prev crew present → prev ignored, TMDB credits win', () => {
+		const prev = { director: 'Someone Else' };
+		const r = buildRecord(movieDetail, true, prev);
+		expect(r.director).toEqual(['Denis Villeneuve']);
+	});
+});
+
 describe('eng_name derivation', () => {
 	test('non-Latin original → engName = localized title', () => {
 		const jp = { ...movieDetail, title: 'A Silent Voice: The Movie', original_title: '映画 聲の形' };

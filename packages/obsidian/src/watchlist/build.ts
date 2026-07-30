@@ -18,6 +18,13 @@ function langName(details: TmdbDetail): string {
 	return LANG_FALLBACK[code] ?? code;
 }
 
+function prevCrewList(prev: Record<string, string>, key: string): string[] {
+	return stripQuotes(prev[key])
+		.split(/,\s*/)
+		.map(s => s.trim())
+		.filter(Boolean);
+}
+
 function crewNames(crew: any[], jobs: Set<string>): string[] {
 	const seen = new Set<string>();
 	const out: string[] = [];
@@ -94,9 +101,14 @@ export function buildRecord(details: TmdbDetail, isMovie: boolean, prev: Record<
 		const agg = details.aggregate_credits ?? {};
 		cast = (agg.cast ?? []).slice(0, 12).map((c: any) => c.name);
 		const createdBy: string[] = (details.created_by ?? []).map((c: any) => c.name);
-		director = createdBy; // series: creators (latest-episode director needs extra call — Phase 3)
-		writer = createdBy;
-		producer = [];
+		// series: creators (latest-episode director needs extra call — Phase 3)
+		// prev user-set crew wins over created_by fallback until per-episode enrichment lands
+		const prevDirector = prevCrewList(prev, 'director');
+		const prevWriter = prevCrewList(prev, 'writer');
+		const prevProducer = prevCrewList(prev, 'producer');
+		director = prevDirector.length ? prevDirector : createdBy;
+		writer = prevWriter.length ? prevWriter : createdBy;
+		producer = prevProducer.length ? prevProducer : [];
 		title = details.name ?? '';
 		originalTitle = details.original_name ?? '';
 		mediaType = 'TV Series';
