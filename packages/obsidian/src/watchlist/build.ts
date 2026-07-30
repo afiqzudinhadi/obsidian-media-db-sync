@@ -63,6 +63,10 @@ function pickTrailer(videos: TmdbDetail): string {
 	return '';
 }
 
+function isBareIsoCode(s: string): boolean {
+	return /^[A-Z]{2}$/.test(s);
+}
+
 export function buildRecord(details: TmdbDetail, isMovie: boolean, prev: Record<string, string>): WatchlistRecord {
 	const genres: string[] = (details.genres ?? []).map((g: any) => g.name);
 	const language = langName(details);
@@ -119,7 +123,16 @@ export function buildRecord(details: TmdbDetail, isMovie: boolean, prev: Record<
 		contentRating = usCertFromContentRatings(details.content_ratings ?? {});
 		const prodCountries: any[] = details.production_countries ?? [];
 		const originCountries: string[] = details.origin_country ?? [];
-		country = prodCountries[0]?.name ?? originCountries[0] ?? '';
+		if (prodCountries[0]?.name) {
+			country = prodCountries[0].name;
+		} else {
+			const prevCountry = stripQuotes(prev['country']);
+			if (prevCountry && !isBareIsoCode(prevCountry)) {
+				country = prevCountry;
+			} else {
+				country = originCountries[0] ?? '';
+			}
+		}
 		seasons = details.number_of_seasons ?? null;
 		episodes = details.number_of_episodes ?? null;
 		vod = (details.networks ?? []).map((n: any) => n.name);

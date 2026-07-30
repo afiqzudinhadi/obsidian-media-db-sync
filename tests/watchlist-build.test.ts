@@ -146,6 +146,23 @@ describe('TV country derivation', () => {
 		const r = buildRecord(noProdCountries, false, EMPTY_PREV);
 		expect(r.country).toBe('US');
 	});
+	test('TV no production_countries, prev full country name → preserves prev', () => {
+		const { production_countries, ...noProdCountries } = tvDetail as any;
+		const prev = { country: 'United States of America' };
+		const r = buildRecord(noProdCountries, false, prev);
+		expect(r.country).toBe('United States of America');
+	});
+	test('TV no production_countries, prev bare ISO code → uses origin_country fallback', () => {
+		const { production_countries, ...noProdCountries } = tvDetail as any;
+		const prev = { country: 'US' };
+		const r = buildRecord(noProdCountries, false, prev);
+		expect(r.country).toBe('US');
+	});
+	test('TV production_countries present, prev differs → uses production_countries name', () => {
+		const prev = { country: 'Canada' };
+		const r = buildRecord(tvDetail, false, prev);
+		expect(r.country).toBe('United States of America');
+	});
 });
 
 describe('tmdb_rating rounding', () => {
