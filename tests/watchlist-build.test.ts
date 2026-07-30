@@ -80,6 +80,16 @@ describe('user-field preservation', () => {
 		expect(r.ratingStars).toBe('⭐️⭐️⭐️⭐️');
 		expect(r.notionUrl).toBe('https://notion.so/x');
 	});
+	test('quoted notion_url from raw frontmatter capture → quotes stripped', () => {
+		const prev = { notion_url: '"https://www.notion.so/x"' };
+		const r = buildRecord(tvDetail, false, prev);
+		expect(r.notionUrl).toBe('https://www.notion.so/x');
+	});
+	test('null-sentinel notion_url still normalizes to empty', () => {
+		const prev = { notion_url: 'null' };
+		const r = buildRecord(tvDetail, false, prev);
+		expect(r.notionUrl).toBe('');
+	});
 });
 
 describe('watch-status rule (TV)', () => {

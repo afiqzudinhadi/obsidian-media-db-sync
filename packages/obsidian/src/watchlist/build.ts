@@ -1,4 +1,5 @@
 import type { WatchlistRecord } from 'packages/obsidian/src/watchlist/schema';
+import { stripQuotes } from 'packages/obsidian/src/watchlist/parse';
 
 export type TmdbDetail = Record<string, any>;
 
@@ -136,10 +137,10 @@ export function buildRecord(details: TmdbDetail, isMovie: boolean, prev: Record<
 	}
 
 	// ---- preserve user-managed fields ----
-	let watchStatus = prev['watch_status'] || 'Unwatched';
-	const rating = prev['rating'] || '0';
-	const ratingStars = prev['rating_stars'] ?? '';
-	const rawNotionUrl = prev['notion_url'] || '';
+	let watchStatus = stripQuotes(prev['watch_status']) || 'Unwatched';
+	const rating = stripQuotes(prev['rating']) || '0';
+	const ratingStars = stripQuotes(prev['rating_stars']);
+	const rawNotionUrl = stripQuotes(prev['notion_url']);
 	const notionUrl = rawNotionUrl === 'null' ? '' : rawNotionUrl; // quotedOrNull renders empty as literal `null` — don't round-trip it as a value
 
 	// ---- TV watch-status rule: new episode aired since last sync ----

@@ -22,7 +22,7 @@ export function extractMyNotes(body: string): string {
 	return m ? m[1].trim() : '';
 }
 
-function stripQuotes(s: string | undefined): string {
+export function stripQuotes(s: string | undefined): string {
 	return (s ?? '').trim().replace(/^"|"$/g, '');
 }
 
