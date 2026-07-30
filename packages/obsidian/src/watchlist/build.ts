@@ -139,7 +139,8 @@ export function buildRecord(details: TmdbDetail, isMovie: boolean, prev: Record<
 	let watchStatus = prev['watch_status'] || 'Unwatched';
 	const rating = prev['rating'] || '0';
 	const ratingStars = prev['rating_stars'] ?? '';
-	const notionUrl = prev['notion_url'] || '';
+	const rawNotionUrl = prev['notion_url'] || '';
+	const notionUrl = rawNotionUrl === 'null' ? '' : rawNotionUrl; // quotedOrNull renders empty as literal `null` — don't round-trip it as a value
 
 	// ---- TV watch-status rule: new episode aired since last sync ----
 	const prevLast = (prev['last_air_date'] ?? '').trim().replace(/^"|"$/g, '');
