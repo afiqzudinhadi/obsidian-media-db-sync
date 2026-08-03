@@ -1,0 +1,40 @@
+{
+	"data": {
+		"mal_id": 116778,
+		"url": "https://myanimelist.net/manga/116778/Chainsaw_Man",
+		"images": {
+			"jpg": {
+				"image_url": "https://cdn.myanimelist.net/images/manga/3/216464.jpg",
+				"large_image_url": "https://cdn.myanimelist.net/images/manga/3/216464l.jpg"
+			}
+		},
+		"title": "Chainsaw Man",
+		"title_english": "Chainsaw Man",
+		"title_japanese": "チェンソーマン",
+		"titles": [
+			{ "type": "Default", "title": "Chainsaw Man" },
+			{ "type": "Japanese", "title": "チェンソーマン" },
+			{ "type": "English", "title": "Chainsaw Man" }
+		],
+		"type": "Manga",
+		"chapters": null,
+		"volumes": null,
+		"status": "Publishing",
+		"publishing": true,
+		"published": {
+			"from": "2018-12-03T00:00:00+00:00",
+			"to": null
+		},
+		"score": 8.73,
+		"scored_by": 42000,
+		"rank": 12,
+		"popularity": 3,
+		"synopsis": "Denji has been robbed of a normal life ever since his Chainsaw Devil, Pochita, merged with him. Now, he'll hunt down devils with his devil-dog powers and try to survive in a world that sees him as a weapon.",
+		"authors": [{ "mal_id": 1, "type": "people", "name": "Fujimoto, Tatsuki" }],
+		"genres": [
+			{ "mal_id": 1, "type": "manga", "name": "Action" },
+			{ "mal_id": 8, "type": "manga", "name": "Horror" },
+			{ "mal_id": 30, "type": "manga", "name": "Sports" }
+		]
+	}
+}

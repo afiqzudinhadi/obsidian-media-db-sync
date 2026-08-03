@@ -1,0 +1,20 @@
+{
+	"result": "ok",
+	"response": "collection",
+	"data": [
+		{
+			"id": "b1a2c3d4-0000-1111-2222-333344445555",
+			"type": "chapter",
+			"attributes": {
+				"chapter": "214",
+				"title": "",
+				"translatedLanguage": "en",
+				"publishAt": "2026-07-30T11:00:00+00:00",
+				"readableAt": "2026-07-30T12:00:00+00:00"
+			}
+		}
+	],
+	"limit": 1,
+	"offset": 0,
+	"total": 214
+}
