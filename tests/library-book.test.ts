@@ -215,6 +215,13 @@ describe('bookSpec.sync — open library enrich', () => {
 		expect(result).toBeNull();
 	});
 
+	test('olid search miss (results present, none match stored olid) -> null, no identity swap, logged', async () => {
+		const deps = makeDeps({ http: async () => ({ docs: [{ key: '/works/OL999999W', title: '1984', author_name: ['Someone Else'] }] }) });
+		const result = await bookSpec.sync(ctxFor({ olid: 'OL1168083W', title: '1984' }), deps);
+		expect(result).toBeNull();
+		expect(deps.logCalls.some(m => m.includes('OL1168083W'))).toBe(true);
+	});
+
 	test('successful enrich -> canonical fm + flipped always false', async () => {
 		const deps = makeDeps({ http: async () => olFixture });
 		const fm = { olid: 'OL1168083W', title: '1984', read_status: 'Read', rating: '5', rating_stars: '⭐️⭐️⭐️⭐️⭐️' };

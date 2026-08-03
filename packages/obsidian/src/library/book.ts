@@ -77,7 +77,8 @@ export function buildBook(doc: any, prev: Record<string, string>): BookRecord {
 
 /** Carries the legacy goodreads search link forward as a `## Links` entry across every re-render. */
 function resolveGoodreadsLink(prev: Record<string, string>, body: string): string {
-	const fromBody = /\[Goodreads\]\(([^)]+)\)/.exec(body ?? '');
+	const linksMatch = /##\s*Links\s*\n([\s\S]*?)(?=\n##\s|$)/.exec(body ?? '');
+	const fromBody = linksMatch ? /\[Goodreads\]\(([^)]+)\)/.exec(linksMatch[1]) : null;
 	if (fromBody) return fromBody[1];
 	// first-pass skeleton conversion: legacy plain `url` field IS the goodreads link, before
 	// it gets overwritten by the canonical Open Library url
@@ -176,8 +177,14 @@ export const bookSpec: MediaTypeSpec = {
 			deps.log(`book open library fetch failed (olid ${olid}): ${String(e)}`);
 			return null;
 		}
-		const doc = docs.find(d => String(d.key ?? '') === `/works/${olid}`) ?? docs[0];
-		if (!doc) return null;
+		if (docs.length === 0) return null;
+		const doc = docs.find(d => String(d.key ?? '') === `/works/${olid}`);
+		if (!doc) {
+			// stored olid no longer in the search results -- never silently swap to a
+			// different work's data; leave the note untouched (id fields preserved)
+			deps.log(`book open library search returned no doc matching olid ${olid} (title "${query}")`);
+			return null;
+		}
 
 		const record = buildBook(doc, fm);
 		const goodreadsUrl = resolveGoodreadsLink(fm, ctx.body);
