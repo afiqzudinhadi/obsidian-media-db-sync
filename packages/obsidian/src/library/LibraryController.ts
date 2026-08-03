@@ -91,17 +91,25 @@ export class LibraryController {
 		};
 	}
 
-	private makeSpecDeps(): SpecDeps {
+	/** dryRun=true routes flip notifications to the log instead of a real Notice -- a dry-run
+	 * preview shouldn't pop user-facing notices for changes that were never actually written. */
+	private makeSpecDeps(dryRun = false): SpecDeps {
 		return {
 			http: this.makeHttp(),
 			httpText: this.makeHttpText(),
 			getKey: name => this.getKey(name),
 			log: msg => console.log(`[media-db-library] ${msg}`),
-			notify: msg => this.notify(msg),
+			notify: msg => {
+				if (dryRun) {
+					console.log(`[media-db-library] [dry] ${msg}`);
+				} else {
+					this.notify(msg);
+				}
+			},
 		};
 	}
 
-	private makeDeps(spec: MediaTypeSpec): LibraryEngineDeps {
+	private makeDeps(spec: MediaTypeSpec, dryRun = false): LibraryEngineDeps {
 		const { app } = this.plugin;
 		const folderPath = this.folderFor(spec);
 		const folder = app.vault.getAbstractFileByPath(folderPath);
@@ -122,7 +130,7 @@ export class LibraryController {
 			},
 			sleep: ms => new Promise(r => setTimeout(r, ms)),
 			log: msg => console.log(`[media-db-library] ${msg}`),
-			specDeps: this.makeSpecDeps(),
+			specDeps: this.makeSpecDeps(dryRun),
 		};
 	}
 
@@ -140,7 +148,7 @@ export class LibraryController {
 
 	private async runSync(spec: MediaTypeSpec, full: boolean, dryRun: boolean, quiet: boolean): Promise<LibraryReport> {
 		this.warnMissingKey(spec, quiet);
-		const deps = this.makeDeps(spec);
+		const deps = this.makeDeps(spec, dryRun);
 		const report = await libraryFolderSync(spec, deps, { full, dryRun });
 		const mode = dryRun ? 'DRY-RUN ' : '';
 		if (shouldNotifySync(quiet, report.written, report.errors.length)) {
@@ -172,7 +180,7 @@ export class LibraryController {
 		}
 		this.syncing = true;
 		try {
-			const deps = this.makeDeps(spec);
+			const deps = this.makeDeps(spec, dryRun);
 			const report = await libraryFolderResolve(spec, deps, { dryRun });
 			const mode = dryRun ? 'DRY-RUN ' : '';
 			this.notify(
@@ -194,7 +202,15 @@ export class LibraryController {
 		try {
 			for (const spec of this.specs) {
 				if (!this.enabledFor(spec)) continue;
-				await this.runSync(spec, full, false, quiet);
+				try {
+					await this.runSync(spec, full, false, quiet);
+				} catch (e) {
+					// one type's failure (e.g. its vault folder is missing) must not abort the
+					// rest of the run -- log + surface it, then keep going with the other types
+					const msg = `Library sync failed for ${spec.typeName}: ${e instanceof Error ? e.message : String(e)}`;
+					console.log(`[media-db-library] ${msg}`);
+					if (!quiet) this.notify(msg);
+				}
 			}
 			if (!full) {
 				this.plugin.settings.libraryLastSync = Date.now();

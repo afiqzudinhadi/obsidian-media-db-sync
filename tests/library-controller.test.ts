@@ -274,3 +274,150 @@ describe('missing API key handling', () => {
 		expect(notices.filter(m => m.includes('API key not configured')).length).toBe(1);
 	});
 });
+
+describe('syncAll error isolation (I5)', () => {
+	test('first spec throws (e.g. missing vault folder) -> remaining specs still synced, lastSync updated', async () => {
+		const c = new LibraryController(fakePlugin());
+		const notices: string[] = [];
+		(c as any).notify = (msg: string) => notices.push(msg);
+		const calledTypes: string[] = [];
+		(c as any).makeDeps = (spec: { typeName: string }) => {
+			calledTypes.push(spec.typeName);
+			if (spec.typeName === 'manga') {
+				return {
+					listNotes: async () => {
+						throw new Error('Library folder not found: Mangas');
+					},
+					readNote: async () => '',
+					writeNote: async () => {},
+					sleep: async () => {},
+					log: () => {},
+					specDeps: fakeSpecDeps(),
+				};
+			}
+			return {
+				listNotes: async () => [],
+				readNote: async () => '',
+				writeNote: async () => {},
+				sleep: async () => {},
+				log: () => {},
+				specDeps: fakeSpecDeps(),
+			};
+		};
+
+		const before = (c as any).plugin.settings.libraryLastSync;
+		await c.syncAll(false, false);
+
+		// manga (first in LIBRARY_TYPES) threw, but book/game/comic still got their turn
+		expect(calledTypes.sort()).toEqual(['book', 'comic', 'game', 'manga']);
+		expect(notices.some(m => m.includes('Library sync failed for manga'))).toBe(true);
+		expect((c as any).plugin.settings.libraryLastSync).toBeGreaterThan(before);
+	});
+
+	test('quiet sync: per-type failure logged only, no Notice', async () => {
+		const c = new LibraryController(fakePlugin());
+		const notices: string[] = [];
+		(c as any).notify = (msg: string) => notices.push(msg);
+		const logs: string[] = [];
+		const origLog = console.log;
+		console.log = (msg: string) => {
+			logs.push(msg);
+		};
+		(c as any).makeDeps = (spec: { typeName: string }) => ({
+			listNotes: async () => {
+				if (spec.typeName === 'book') throw new Error('boom');
+				return [];
+			},
+			readNote: async () => '',
+			writeNote: async () => {},
+			sleep: async () => {},
+			log: () => {},
+			specDeps: fakeSpecDeps(),
+		});
+
+		try {
+			await c.syncAll(false, true);
+		} finally {
+			console.log = origLog;
+		}
+
+		expect(notices.some(m => m.includes('Library sync failed for book'))).toBe(false);
+		expect(logs.some(m => m.includes('Library sync failed for book'))).toBe(true);
+	});
+});
+
+describe('dry-run notify suppression (minor)', () => {
+	test('makeSpecDeps(dryRun=true) -> notify logs instead of raising a Notice', () => {
+		const c = new LibraryController(fakePlugin());
+		const notices: string[] = [];
+		(c as any).notify = (msg: string) => notices.push(msg);
+		const logs: string[] = [];
+		const origLog = console.log;
+		console.log = (msg: string) => {
+			logs.push(msg);
+		};
+		try {
+			const specDeps = (c as any).makeSpecDeps(true);
+			specDeps.notify('«Test Manga» ch. 5 out');
+		} finally {
+			console.log = origLog;
+		}
+		expect(notices).toEqual([]);
+		expect(logs.some(m => m.includes('«Test Manga» ch. 5 out'))).toBe(true);
+	});
+
+	test('makeSpecDeps(dryRun=false) -> notify raises a Notice normally', () => {
+		const c = new LibraryController(fakePlugin());
+		const notices: string[] = [];
+		(c as any).notify = (msg: string) => notices.push(msg);
+		const specDeps = (c as any).makeSpecDeps(false);
+		specDeps.notify('«Test Manga» ch. 5 out');
+		expect(notices).toEqual(['«Test Manga» ch. 5 out']);
+	});
+
+	test('dry-run manga flip scenario end-to-end: syncType(dryRun=true) -> no Notice, log entry present', async () => {
+		const c = new LibraryController(fakePlugin());
+		const notices: string[] = [];
+		(c as any).notify = (msg: string) => notices.push(msg);
+		const logs: string[] = [];
+		const origLog = console.log;
+		console.log = (msg: string) => {
+			logs.push(msg);
+		};
+
+		const flipSpec = {
+			typeName: 'manga' as const,
+			itemType: 'manga_item',
+			folderSettingKey: 'libraryMangaFolder',
+			enabledSettingKey: 'libraryMangaEnabled',
+			throttleMs: 0,
+			hasId: () => true,
+			isActive: () => true,
+			resolve: async () => null,
+			sync: async (_ctx: unknown, deps: { notify: (msg: string) => void }) => {
+				deps.notify('«Test Manga» ch. 5 out');
+				return { content: 'updated content', flipped: true };
+			},
+		};
+
+		(c as any).makeDeps = (spec: unknown, dryRun: boolean) => ({
+			listNotes: async () => [{ path: 'Mangas/Test Manga.md' }],
+			readNote: async () => 'orig content',
+			writeNote: async () => {},
+			sleep: async () => {},
+			log: () => {},
+			specDeps: (c as any).makeSpecDeps(dryRun),
+		});
+
+		try {
+			await c.syncType(flipSpec as any, false, true); // dryRun = true
+		} finally {
+			console.log = origLog;
+		}
+
+		// the run-summary Notice (dry-run or not) is unrelated existing behavior and still fires;
+		// what must NOT happen is the spec's flip-notify reaching a real Notice
+		expect(notices.some(m => m.includes('«Test Manga» ch. 5 out'))).toBe(false);
+		expect(logs.some(m => m.includes('«Test Manga» ch. 5 out'))).toBe(true);
+	});
+});
