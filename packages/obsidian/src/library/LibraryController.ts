@@ -127,14 +127,19 @@ export class LibraryController {
 	}
 
 	/** Per-note key skipping already happens inside the spec (log+skip); this only surfaces one Notice per sync run naming the affected type. */
-	private warnMissingKey(spec: MediaTypeSpec): void {
+	private warnMissingKey(spec: MediaTypeSpec, quiet: boolean): void {
 		const req = KEY_REQUIREMENT[spec.typeName];
 		if (!req || this.getKey(req)) return;
-		this.notify(`Library sync: ${KEY_LABEL[req]} API key not configured — ${spec.typeName} enrichment skipped (Media DB Sync settings).`);
+		const msg = `Library sync: ${KEY_LABEL[req]} API key not configured — ${spec.typeName} enrichment skipped (Media DB Sync settings).`;
+		if (quiet) {
+			console.log(`[media-db-library] ${msg}`);
+		} else {
+			this.notify(msg);
+		}
 	}
 
 	private async runSync(spec: MediaTypeSpec, full: boolean, dryRun: boolean, quiet: boolean): Promise<LibraryReport> {
-		this.warnMissingKey(spec);
+		this.warnMissingKey(spec, quiet);
 		const deps = this.makeDeps(spec);
 		const report = await libraryFolderSync(spec, deps, { full, dryRun });
 		const mode = dryRun ? 'DRY-RUN ' : '';

@@ -168,7 +168,46 @@ describe('concurrency guard', () => {
 });
 
 describe('missing API key handling', () => {
-	test('missing RAWG + Comic Vine keys → one notice each for game/comic, manga/book unaffected', async () => {
+	test('missing RAWG + Comic Vine keys + quiet sync → zero notices, logged only', async () => {
+		const c = new LibraryController(fakePlugin()); // no rawgKeyId/comicvineKeyId configured
+		const notices: string[] = [];
+		const logs: string[] = [];
+		(c as any).notify = (msg: string) => notices.push(msg);
+		const calledTypes: string[] = [];
+		(c as any).makeDeps = (spec: { typeName: string }) => {
+			calledTypes.push(spec.typeName);
+			return {
+				listNotes: async () => [],
+				readNote: async () => '',
+				writeNote: async () => {},
+				sleep: async () => {},
+				log: () => {},
+				specDeps: fakeSpecDeps(),
+			};
+		};
+
+		const origLog = console.log;
+		console.log = (msg: string) => {
+			logs.push(msg);
+			origLog(msg);
+		};
+
+		try {
+			await c.syncAll(false, true);
+		} finally {
+			console.log = origLog;
+		}
+
+		expect(calledTypes.sort()).toEqual(['book', 'comic', 'game', 'manga']);
+		const keyNotices = notices.filter(m => m.includes('API key not configured'));
+		expect(keyNotices.length).toBe(0);
+		const keyLogs = logs.filter(m => m.includes('API key not configured'));
+		expect(keyLogs.length).toBe(2);
+		expect(keyLogs.some(m => m.includes('RAWG') && m.includes('game'))).toBe(true);
+		expect(keyLogs.some(m => m.includes('Comic Vine') && m.includes('comic'))).toBe(true);
+	});
+
+	test('missing RAWG + Comic Vine keys + manual (non-quiet) sync → one notice each for game/comic', async () => {
 		const c = new LibraryController(fakePlugin()); // no rawgKeyId/comicvineKeyId configured
 		const notices: string[] = [];
 		(c as any).notify = (msg: string) => notices.push(msg);
@@ -185,7 +224,7 @@ describe('missing API key handling', () => {
 			};
 		};
 
-		await c.syncAll(false, true);
+		await c.syncAll(false, false);
 
 		expect(calledTypes.sort()).toEqual(['book', 'comic', 'game', 'manga']);
 		const keyNotices = notices.filter(m => m.includes('API key not configured'));
