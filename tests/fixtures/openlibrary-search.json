@@ -1,0 +1,30 @@
+{
+	"numFound": 1,
+	"start": 0,
+	"docs": [
+		{
+			"key": "/works/OL1168083W",
+			"title": "1984",
+			"author_name": ["George Orwell"],
+			"first_publish_year": 1949,
+			"number_of_pages_median": 328,
+			"subject": [
+				"Dystopian fiction",
+				"Science fiction",
+				"Politics",
+				"Totalitarianism",
+				"Fiction",
+				"Classic literature",
+				"Government, resistance to",
+				"Surveillance",
+				"Censorship",
+				"Propaganda",
+				"Big Brother (Fictitious character)",
+				"Thought control",
+				"Newspeak (Fictitious language)",
+				"Ministry of Truth (Fictitious organization)"
+			],
+			"cover_i": 12919016
+		}
+	]
+}
