@@ -4,6 +4,7 @@ import { syncFolder, withRateLimitRetry, TmdbRateLimitError, type SyncDeps, type
 import { fetchDetail, searchTitle, type HttpJsonFn } from 'packages/obsidian/src/watchlist/tmdb';
 import { obsidianFetch } from 'packages/obsidian/src/utils/Utils';
 import { parseNote, noteTmdbRef, stripQuotes } from 'packages/obsidian/src/watchlist/parse';
+import { patchFrontmatter } from 'packages/obsidian/src/watchlist/patchFrontmatter';
 import { resolveNote } from 'packages/obsidian/src/watchlist/resolve';
 
 export interface ResolveReport {
@@ -11,18 +12,6 @@ export interface ResolveReport {
 	resolved: number;
 	ambiguous: number;
 	errors: { path: string; error: string }[];
-}
-
-function patchFrontmatter(content: string, tmdbId: string, mediaType: string): string {
-	const insert = `tmdb_id: ${tmdbId}\nmedia_type: ${mediaType}`;
-	const fmMatch = /^---\n([\s\S]*?)\n---/.exec(content);
-	if (fmMatch) {
-		const inner = fmMatch[1];
-		const typeLine = /^type:.*$/m.exec(inner);
-		const newInner = typeLine ? inner.slice(0, typeLine.index + typeLine[0].length) + '\n' + insert + inner.slice(typeLine.index + typeLine[0].length) : insert + '\n' + inner;
-		return content.slice(0, fmMatch.index) + '---\n' + newInner + '\n---' + content.slice(fmMatch.index + fmMatch[0].length);
-	}
-	return `---\ntype: watchlist_item\n${insert}\n---\n\n` + content;
 }
 
 export function shouldNotifySync(quiet: boolean, written: number, errorCount: number): boolean {
@@ -146,7 +135,7 @@ export class WatchlistController {
 						report.resolved++;
 						const mediaType = result.isMovie ? 'Movie' : 'TV Series';
 						deps.log(`${dryRun ? '[dry] ' : ''}resolved ${note.path} -> tmdb_id ${result.tmdbId} (${result.matchedTitle})`);
-						if (!dryRun) await deps.writeNote(note.path, patchFrontmatter(content, result.tmdbId, mediaType));
+						if (!dryRun) await deps.writeNote(note.path, patchFrontmatter(content, { tmdb_id: result.tmdbId, media_type: mediaType }, { defaultType: 'watchlist_item' }));
 					}
 					await deps.sleep(250);
 				} catch (e) {
