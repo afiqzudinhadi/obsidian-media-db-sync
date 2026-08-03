@@ -1,0 +1,21 @@
+{
+	"792100": {
+		"success": true,
+		"data": {
+			"type": "game",
+			"name": "7 Billion Humans",
+			"steam_appid": 792100,
+			"developers": ["Tomorrow Corporation"],
+			"publishers": ["Tomorrow Corporation"],
+			"genres": [
+				{ "id": "4", "description": "Casual" },
+				{ "id": "23", "description": "Indie" },
+				{ "id": "2", "description": "Strategy" }
+			],
+			"release_date": { "coming_soon": false, "date": "2 Mar, 2018" },
+			"metacritic": { "score": 79, "url": "https://www.metacritic.com/game/pc/7-billion-humans" },
+			"header_image": "https://cdn.akamai.steamstatic.com/steam/apps/792100/header.jpg",
+			"short_description": "From the creators of Human Resource Machine! Program a workforce of dumb humans to do your bidding in this fiendish puzzle game."
+		}
+	}
+}

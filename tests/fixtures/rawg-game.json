@@ -1,0 +1,17 @@
+{
+	"id": 4200,
+	"name": "Hollow Knight",
+	"developers": [{ "name": "Team Cherry" }],
+	"publishers": [{ "name": "Team Cherry" }],
+	"platforms": [
+		{ "platform": { "name": "PC" } },
+		{ "platform": { "name": "macOS" } },
+		{ "platform": { "name": "Linux" } },
+		{ "platform": { "name": "Nintendo Switch" } }
+	],
+	"genres": [{ "name": "Action" }, { "name": "Adventure" }, { "name": "Indie" }],
+	"released": "2017-02-24",
+	"metacritic": 90,
+	"background_image": "https://media.rawg.io/media/games/4cf/4cfc6b7f1850590a4634b08bfab308ab.jpg",
+	"description_raw": "Hollow Knight is a classically styled 2D action adventure crafted with painstaking detail. Explore twisting caverns, battle tainted creatures, and befriend bizarre bugs."
+}
