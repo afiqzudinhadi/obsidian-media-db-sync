@@ -16,6 +16,7 @@ import { TMDBSeasonAPI } from 'packages/obsidian/src/api/apis/TMDBSeasonAPI';
 import { TMDBSeriesAPI } from 'packages/obsidian/src/api/apis/TMDBSeriesAPI';
 import { VNDBAPI } from 'packages/obsidian/src/api/apis/VNDBAPI';
 import { WikipediaAPI } from 'packages/obsidian/src/api/apis/WikipediaAPI';
+import { LibraryController, LIBRARY_TYPES } from 'packages/obsidian/src/library/LibraryController';
 import type { LegacyApiKeyEntry } from 'packages/obsidian/src/modals/LegacyApiKeysModal';
 import { LegacyApiKeysModal } from 'packages/obsidian/src/modals/LegacyApiKeysModal';
 import { PropertyMapper } from 'packages/obsidian/src/settings/PropertyMapper';
@@ -46,6 +47,7 @@ export default class MediaDbPlugin extends Plugin {
 	dateFormatter!: DateFormatter;
 	errorReporter!: ErrorReporter;
 	watchlist!: WatchlistController;
+	library!: LibraryController;
 
 	async onload(): Promise<void> {
 		this.mediaTypeManager = new MediaTypeManager();
@@ -64,10 +66,13 @@ export default class MediaDbPlugin extends Plugin {
 		this.registerCommands();
 
 		this.watchlist = new WatchlistController(this);
-		// catch-up shortly after startup (let vault index settle), then hourly due-check
-		const catchUpTimeout = window.setTimeout(() => void this.watchlist.maybeCatchUp(), 30_000);
+		this.library = new LibraryController(this);
+		// catch-up shortly after startup (let vault index settle), then hourly due-check.
+		// library catch-up runs after watchlist's, sharing the same timers (no new timers).
+		const catchUp = () => void this.watchlist.maybeCatchUp().then(() => this.library.maybeCatchUp());
+		const catchUpTimeout = window.setTimeout(catchUp, 30_000);
 		this.register(() => window.clearTimeout(catchUpTimeout));
-		this.registerInterval(window.setInterval(() => void this.watchlist.maybeCatchUp(), 3600_000));
+		this.registerInterval(window.setInterval(catchUp, 3600_000));
 	}
 
 	onunload(): void {}
@@ -196,6 +201,29 @@ export default class MediaDbPlugin extends Plugin {
 			id: 'watchlist-resolve-ids',
 			name: 'Watchlist: resolve missing TMDB ids',
 			callback: () => void this.watchlist.resolveMissingIds().catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e))),
+		});
+
+		for (const { spec, slug } of LIBRARY_TYPES) {
+			this.addCommand({
+				id: `library-sync-${slug}`,
+				name: `Library: sync ${slug} now`,
+				callback: () => void this.library.syncType(spec, false).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e))),
+			});
+			this.addCommand({
+				id: `library-resolve-${slug}`,
+				name: `Library: resolve ${slug} ids`,
+				callback: () => void this.library.resolveType(spec).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e))),
+			});
+			this.addCommand({
+				id: `library-dry-run-${slug}`,
+				name: `Library: dry-run ${slug} full sync`,
+				callback: () => void this.library.syncType(spec, true, true).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e))),
+			});
+		}
+		this.addCommand({
+			id: 'library-sync-all',
+			name: 'Library: sync all',
+			callback: () => void this.library.syncAll(false).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e))),
 		});
 	}
 

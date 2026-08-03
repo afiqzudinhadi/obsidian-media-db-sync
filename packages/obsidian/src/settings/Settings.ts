@@ -124,6 +124,16 @@ export interface MediaDbPluginSettings {
 	watchlistSyncIntervalHours: number;
 	watchlistLastSync: number;
 
+	libraryMangaEnabled: boolean;
+	libraryMangaFolder: string;
+	libraryBookEnabled: boolean;
+	libraryBookFolder: string;
+	libraryGameEnabled: boolean;
+	libraryGameFolder: string;
+	libraryComicEnabled: boolean;
+	libraryComicFolder: string;
+	libraryLastSync: number;
+
 	// DEPRECATED: Use propertyMappingModels instead
 	moviePropertyConversionRules: string;
 	seriesPropertyConversionRules: string;
@@ -387,6 +397,16 @@ const DEFAULT_SETTINGS: MediaDbPluginSettings = {
 	watchlistFolder: 'Watchlist',
 	watchlistSyncIntervalHours: 24,
 	watchlistLastSync: 0,
+
+	libraryMangaEnabled: false,
+	libraryMangaFolder: 'Mangas',
+	libraryBookEnabled: false,
+	libraryBookFolder: 'Books',
+	libraryGameEnabled: false,
+	libraryGameFolder: 'Games',
+	libraryComicEnabled: false,
+	libraryComicFolder: 'Comics',
+	libraryLastSync: 0,
 
 	// DEPRECATED
 	moviePropertyConversionRules: '',
@@ -790,6 +810,54 @@ export class MediaDbSettingTab extends PluginSettingTab {
 							});
 					}),
 		);
+
+		// MARK: Library sync
+		const libraryGroup = new SettingGroup(containerEl);
+		libraryGroup.setHeading('Library sync');
+
+		const libraryTypeSettings: { label: string; enabledKey: keyof MediaDbPluginSettings; folderKey: keyof MediaDbPluginSettings; desc: string }[] = [
+			{ label: 'Manga', enabledKey: 'libraryMangaEnabled', folderKey: 'libraryMangaFolder', desc: 'Jikan (MyAnimeList) + MangaDex/RSS chapter tracking.' },
+			{ label: 'Book', enabledKey: 'libraryBookEnabled', folderKey: 'libraryBookFolder', desc: 'Open Library enrichment.' },
+			{ label: 'Game', enabledKey: 'libraryGameEnabled', folderKey: 'libraryGameFolder', desc: 'Steam + RAWG enrichment. Uses the RAWG API key configured above.' },
+			{ label: 'Comic', enabledKey: 'libraryComicEnabled', folderKey: 'libraryComicFolder', desc: 'Comic Vine enrichment. Uses the Comic Vine API key configured above.' },
+		];
+
+		for (const { label, enabledKey, folderKey, desc } of libraryTypeSettings) {
+			libraryGroup.addSetting(
+				setting =>
+					void setting
+						.setName(`Enable ${label.toLowerCase()} library sync`)
+						.setDesc(`Periodically sync ${label.toLowerCase()} notes against their source APIs. ${desc}`)
+						.addToggle(cb => {
+							cb.setValue(this.plugin.settings[enabledKey] as boolean).onChange(data => {
+								(this.plugin.settings[enabledKey] as boolean) = data;
+								void this.plugin.saveSettings();
+							});
+						}),
+			);
+
+			libraryGroup.addSetting(
+				setting =>
+					void setting
+						.setName(`${label} folder`)
+						.setDesc(`Folder containing ${label.toLowerCase()} notes.`)
+						.addSearch(cb => {
+							const suggester = new FolderSuggest(this.app, cb.inputEl);
+							suggester.onSelect(folder => {
+								cb.setValue(folder.path);
+								(this.plugin.settings[folderKey] as string) = folder.path;
+								void this.plugin.saveSettings();
+								suggester.close();
+							});
+							cb.setPlaceholder(DEFAULT_SETTINGS[folderKey] as string)
+								.setValue(this.plugin.settings[folderKey] as string)
+								.onChange(data => {
+									(this.plugin.settings[folderKey] as string) = data;
+									void this.plugin.saveSettings();
+								});
+						}),
+			);
+		}
 
 		// MARK: Media type settings
 
