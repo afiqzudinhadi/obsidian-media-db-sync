@@ -149,6 +149,15 @@ describe('renderBook golden', () => {
 		expect(out).toContain('## My Notes\n\nreread every few years');
 	});
 
+	test('rating line present when rating set', () => {
+		expect(renderBook(RECORD, '')).toContain('**Rating:** ⭐️⭐️⭐️⭐️⭐️ (5/5)');
+	});
+
+	test('rating 0 -> Rating line absent', () => {
+		const r = { ...RECORD, rating: '0', ratingStars: '' };
+		expect(renderBook(r, '')).not.toContain('**Rating:**');
+	});
+
 	test('no goodreads url -> Links has only Open Library entry', () => {
 		const out = renderBook(RECORD, '');
 		expect(out).toContain('- [Open Library](https://openlibrary.org/works/OL1168083W)');

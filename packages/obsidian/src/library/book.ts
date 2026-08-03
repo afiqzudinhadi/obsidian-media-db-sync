@@ -1,6 +1,7 @@
 import type { LibraryNoteCtx, MediaTypeSpec, SpecDeps } from 'packages/obsidian/src/library/types';
 import { stripQuotes, extractMyNotes, extractCustomSections, type CustomSection } from 'packages/obsidian/src/watchlist/parse';
 import { yamlList, yamlScalar, quotedOrNull } from 'packages/obsidian/src/watchlist/yaml';
+import { deriveReadStatus, deriveRating } from 'packages/obsidian/src/library/convert';
 
 const OPENLIBRARY_BASE = 'https://openlibrary.org';
 
@@ -17,24 +18,6 @@ export interface BookRecord {
 	isbn: string;
 	poster: string | null;
 	url: string;
-}
-
-function deriveReadStatus(prev: Record<string, string>): string {
-	const canonical = stripQuotes(prev['read_status']);
-	if (canonical) return canonical;
-	// skeleton conversion: legacy boolean `read` field
-	return stripQuotes(prev['read']) === 'true' ? 'Read' : 'Unread';
-}
-
-function deriveRating(prev: Record<string, string>): { rating: string; ratingStars: string } {
-	const canonicalRating = stripQuotes(prev['rating']);
-	if (canonicalRating) return { rating: canonicalRating, ratingStars: stripQuotes(prev['rating_stars']) };
-	// skeleton conversion: legacy numeric `personalRating` field -> N stars
-	const legacy = Number(stripQuotes(prev['personalRating']));
-	if (Number.isFinite(legacy) && legacy > 0) {
-		return { rating: String(legacy), ratingStars: '⭐️'.repeat(legacy) };
-	}
-	return { rating: '0', ratingStars: '' };
 }
 
 function deriveAuthors(doc: any, prev: Record<string, string>): string[] {
@@ -111,7 +94,9 @@ export function renderBook(r: BookRecord, myNotes: string, customSections: Custo
 	if (r.poster) b.push(`![poster|200](${r.poster})`, '');
 	const meta = ['**Book**', ...[r.year !== null ? String(r.year) : '', r.pages !== null ? `${r.pages} p.` : ''].filter(x => x)];
 	b.push(meta.join(' · '), '');
-	b.push(`**Read Status:** ${r.readStatus}`, '');
+	b.push(`**Read Status:** ${r.readStatus}`);
+	if (r.rating !== '0' && r.rating !== '' && r.ratingStars) b.push(`**Rating:** ${r.ratingStars} (${r.rating}/5)`);
+	b.push('');
 	if (r.authors.length) b.push(`**Authors:** ${r.authors.join(', ')}`, '');
 	const links: string[] = [];
 	if (r.url) links.push(`- [Open Library](${r.url})`);

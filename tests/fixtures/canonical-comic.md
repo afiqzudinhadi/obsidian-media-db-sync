@@ -24,6 +24,7 @@ tags: [comics, comic]
 **Comic** · Ongoing · 2024
 
 **Read Status:** Reading
+**Rating:** ⭐️⭐️⭐️⭐️ (4/5)
 **Progress:** issue 8 / 10
 
 ## Synopsis

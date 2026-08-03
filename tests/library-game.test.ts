@@ -196,6 +196,39 @@ describe('renderGame golden', () => {
 		expect(out).toContain('## My Notes\n\nplayed co-op with a friend');
 	});
 
+	test('rating line present when rating set', () => {
+		expect(renderGame(RECORD, '')).toContain('**Rating:** ⭐️⭐️⭐️⭐️ (4/5)');
+	});
+
+	test('rating 0 -> Rating line absent', () => {
+		const r = { ...RECORD, rating: '0', ratingStars: '' };
+		expect(renderGame(r, '')).not.toContain('**Rating:**');
+	});
+
+	test('links present w/ steam appid', () => {
+		expect(renderGame(RECORD, '')).toContain('- [Steam](https://store.steampowered.com/app/792100/)');
+	});
+
+	test('links absent when no ids', () => {
+		const r = { ...RECORD, steamAppid: '', rawgId: '', url: '' };
+		const out = renderGame(r, '');
+		expect(out).not.toContain('## Links');
+	});
+
+	test('rawg link uses url field verbatim when rawg_id set', () => {
+		const r = { ...RECORD, steamAppid: '', rawgId: '4200', url: 'https://rawg.io/games/4200' };
+		const out = renderGame(r, '');
+		expect(out).toContain('- [RAWG](https://rawg.io/games/4200)');
+		expect(out).not.toContain('[Steam]');
+	});
+
+	test('both ids set -> both Steam and RAWG links present', () => {
+		const r = { ...RECORD, rawgId: '4200', url: 'https://rawg.io/games/4200' };
+		const out = renderGame(r, '');
+		expect(out).toContain('- [Steam](https://store.steampowered.com/app/792100/)');
+		expect(out).toContain('- [RAWG](https://rawg.io/games/4200)');
+	});
+
 	test('no poster -> poster line omitted', () => {
 		const r = { ...RECORD, poster: null };
 		expect(renderGame(r, '')).not.toContain('![poster');
@@ -432,6 +465,17 @@ describe('gameSpec.sync — steam enrich', () => {
 		const deps = makeDeps({ http: async () => steamFixture });
 		const result = await gameSpec.sync(ctxFor({ steam_appid: '792100' }, '## My Notes\n\nco-op is great'), deps);
 		expect(result!.content).toContain('## My Notes\n\nco-op is great');
+	});
+
+	test('user-added ## Links section in body is owned/replaced by computed links; other custom sections unaffected', async () => {
+		const deps = makeDeps({ http: async () => steamFixture });
+		const body = '## Links\n- [Old link](https://example.com)\n\n## Collection\nPart of [[Games]]\n\n## My Notes\n\n';
+		const result = await gameSpec.sync(ctxFor({ steam_appid: '792100' }, body), deps);
+		const content = result!.content;
+		expect((content.match(/## Links/g) ?? []).length).toBe(1);
+		expect(content).toContain('- [Steam](https://store.steampowered.com/app/792100/)');
+		expect(content).not.toContain('Old link');
+		expect(content).toContain('## Collection\nPart of [[Games]]\n');
 	});
 });
 

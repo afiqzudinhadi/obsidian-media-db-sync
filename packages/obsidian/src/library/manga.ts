@@ -2,6 +2,7 @@ import type { LibraryNoteCtx, MediaTypeSpec, SpecDeps } from 'packages/obsidian/
 import { parseFeed, latestChapter } from 'packages/obsidian/src/library/rss';
 import { stripQuotes, extractMyNotes, extractCustomSections, type CustomSection } from 'packages/obsidian/src/watchlist/parse';
 import { yamlList, yamlScalar, quotedOrNull } from 'packages/obsidian/src/watchlist/yaml';
+import { deriveReadStatus, deriveRating, parseNumOrNull } from 'packages/obsidian/src/library/convert';
 
 const JIKAN_BASE = 'https://api.jikan.moe/v4';
 const MANGADEX_BASE = 'https://api.mangadex.org';
@@ -34,31 +35,6 @@ export interface MangaRecord {
 interface ChapterUpdate {
 	chapter: number | null;
 	date: string;
-}
-
-function parseNumOrNull(raw: string | undefined): number | null {
-	const s = stripQuotes(raw);
-	if (!s || s === 'null') return null;
-	const n = Number(s);
-	return Number.isFinite(n) ? n : null;
-}
-
-function deriveReadStatus(prev: Record<string, string>): string {
-	const canonical = stripQuotes(prev['read_status']);
-	if (canonical) return canonical;
-	// skeleton conversion: legacy boolean `read` field
-	return stripQuotes(prev['read']) === 'true' ? 'Read' : 'Unread';
-}
-
-function deriveRating(prev: Record<string, string>): { rating: string; ratingStars: string } {
-	const canonicalRating = stripQuotes(prev['rating']);
-	if (canonicalRating) return { rating: canonicalRating, ratingStars: stripQuotes(prev['rating_stars']) };
-	// skeleton conversion: legacy numeric `personalRating` field -> N stars
-	const legacy = Number(stripQuotes(prev['personalRating']));
-	if (Number.isFinite(legacy) && legacy > 0) {
-		return { rating: String(legacy), ratingStars: '⭐️'.repeat(legacy) };
-	}
-	return { rating: '0', ratingStars: '' };
 }
 
 /**
@@ -143,6 +119,7 @@ export function renderManga(r: MangaRecord, myNotes: string, customSections: Cus
 	const meta = ['**Manga**', ...[r.status, r.score !== null ? String(r.score) : ''].filter(x => x)];
 	b.push(meta.join(' · '), '');
 	b.push(`**Read Status:** ${r.readStatus}`);
+	if (r.rating !== '0' && r.rating !== '' && r.ratingStars) b.push(`**Rating:** ${r.ratingStars} (${r.rating}/5)`);
 	if (r.lastReadChapter) {
 		const denom = r.latestChapter ?? r.chapters ?? '?';
 		b.push(`**Progress:** ch. ${r.lastReadChapter} / ${denom}`);
@@ -280,6 +257,7 @@ export const mangaSpec: MediaTypeSpec = {
 		if (prevStatus === 'Publishing' && record.status === 'Finished' && record.readStatus === 'Read') {
 			record.readStatus = 'Unread';
 			flipped = true;
+			deps.notify(`«${record.title}» finished — final chapters out`);
 		}
 
 		const content = renderManga(record, extractMyNotes(ctx.body), extractCustomSections(ctx.body));

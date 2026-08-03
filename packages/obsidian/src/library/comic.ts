@@ -1,6 +1,7 @@
 import type { LibraryNoteCtx, MediaTypeSpec, SpecDeps } from 'packages/obsidian/src/library/types';
 import { stripQuotes, extractMyNotes, extractCustomSections, type CustomSection } from 'packages/obsidian/src/watchlist/parse';
 import { yamlList, yamlScalar, quotedOrNull } from 'packages/obsidian/src/watchlist/yaml';
+import { deriveReadStatus, deriveRating, parseNumOrNull } from 'packages/obsidian/src/library/convert';
 
 const COMICVINE_BASE = 'https://comicvine.gamespot.com/api';
 
@@ -20,31 +21,6 @@ export interface ComicRecord {
 	poster: string | null;
 	url: string;
 	description: string;
-}
-
-function parseNumOrNull(raw: string | undefined): number | null {
-	const s = stripQuotes(raw);
-	if (!s || s === 'null') return null;
-	const n = Number(s);
-	return Number.isFinite(n) ? n : null;
-}
-
-function deriveReadStatus(prev: Record<string, string>): string {
-	const canonical = stripQuotes(prev['read_status']);
-	if (canonical) return canonical;
-	// skeleton conversion: legacy boolean `read` field
-	return stripQuotes(prev['read']) === 'true' ? 'Read' : 'Unread';
-}
-
-function deriveRating(prev: Record<string, string>): { rating: string; ratingStars: string } {
-	const canonicalRating = stripQuotes(prev['rating']);
-	if (canonicalRating) return { rating: canonicalRating, ratingStars: stripQuotes(prev['rating_stars']) };
-	// skeleton conversion: legacy numeric `personalRating` field -> N stars
-	const legacy = Number(stripQuotes(prev['personalRating']));
-	if (Number.isFinite(legacy) && legacy > 0) {
-		return { rating: String(legacy), ratingStars: '⭐️'.repeat(legacy) };
-	}
-	return { rating: '0', ratingStars: '' };
 }
 
 /**
@@ -143,6 +119,7 @@ export function renderComic(r: ComicRecord, myNotes: string, customSections: Cus
 	const meta = ['**Comic**', ...[r.status, r.startYear].filter(x => x)];
 	b.push(meta.join(' · '), '');
 	b.push(`**Read Status:** ${r.readStatus}`);
+	if (r.rating !== '0' && r.rating !== '' && r.ratingStars) b.push(`**Rating:** ${r.ratingStars} (${r.rating}/5)`);
 	if (r.lastReadIssue) {
 		const denom = r.latestIssue ?? r.issues ?? '?';
 		b.push(`**Progress:** issue ${r.lastReadIssue} / ${denom}`);

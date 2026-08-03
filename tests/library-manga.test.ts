@@ -185,6 +185,15 @@ describe('renderManga golden', () => {
 		expect(out).toContain('## My Notes\n\ncurrently reading');
 	});
 
+	test('rating line present when rating set', () => {
+		expect(renderManga(RECORD, '')).toContain('**Rating:** ⭐️⭐️⭐️⭐️ (4/5)');
+	});
+
+	test('rating 0 -> Rating line absent', () => {
+		const r = { ...RECORD, rating: '0', ratingStars: '' };
+		expect(renderManga(r, '')).not.toContain('**Rating:**');
+	});
+
 	test('no last_read_chapter -> Progress line omitted', () => {
 		const r = { ...RECORD, lastReadChapter: '' };
 		expect(renderManga(r, '')).not.toContain('**Progress:**');
@@ -391,20 +400,34 @@ describe('mangaSpec.sync — chapter source priority', () => {
 });
 
 describe('mangaSpec.sync — finish-flip', () => {
-	test('prev Publishing + new Finished + read_status Read -> Unread, flipped', async () => {
+	test('prev Publishing + new Finished + read_status Read -> Unread, flipped, notify', async () => {
 		const deps = makeDeps({ http: async () => ({ data: { ...JIKAN_DATA, status: 'Finished' } }) });
 		const fm = { mal_id: '116778', status: 'Publishing', read_status: 'Read' };
 		const result = await mangaSpec.sync(ctxFor(fm), deps);
 		expect(result!.flipped).toBe(true);
 		expect(result!.content).toContain('read_status: Unread');
 		expect(result!.content).toContain('status: Finished');
+		expect(deps.notifyCalls).toEqual(['«Chainsaw Man» finished — final chapters out']);
 	});
-	test('prev Publishing + new Finished + read_status Reading -> no flip', async () => {
+	test('prev Publishing + new Finished + read_status Reading -> no flip, no notify', async () => {
 		const deps = makeDeps({ http: async () => ({ data: { ...JIKAN_DATA, status: 'Finished' } }) });
 		const fm = { mal_id: '116778', status: 'Publishing', read_status: 'Reading' };
 		const result = await mangaSpec.sync(ctxFor(fm), deps);
 		expect(result!.flipped).toBe(false);
 		expect(result!.content).toContain('read_status: Reading');
+		expect(deps.notifyCalls).toEqual([]);
+	});
+	test('chapter-flip and finish-flip both eligible in same sync -> notify fires once (chapter message only, no double-fire)', async () => {
+		const deps = makeDeps({
+			http: async () => ({ data: { ...JIKAN_DATA, status: 'Finished' } }),
+			httpText: async () => RSS_214,
+		});
+		const fm = { mal_id: '116778', rss: 'https://x.y/f.xml', status: 'Publishing', read_status: 'Read', latest_chapter: '213', last_chapter_date: '2026-07-16' };
+		const result = await mangaSpec.sync(ctxFor(fm), deps);
+		expect(result!.flipped).toBe(true);
+		expect(result!.content).toContain('read_status: Unread');
+		expect(result!.content).toContain('status: Finished');
+		expect(deps.notifyCalls).toEqual(['«Chainsaw Man» ch. 214 out']);
 	});
 });
 

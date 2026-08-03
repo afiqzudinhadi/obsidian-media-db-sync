@@ -31,6 +31,7 @@ tags: [mangas, manga]
 **Manga** · Publishing · 8.7
 
 **Read Status:** Reading
+**Rating:** ⭐️⭐️⭐️⭐️ (4/5)
 **Progress:** ch. 210 / 213
 
 ## Synopsis

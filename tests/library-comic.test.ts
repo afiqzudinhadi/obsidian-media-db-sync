@@ -171,6 +171,15 @@ describe('renderComic golden', () => {
 		expect(out).toContain('## My Notes\n\nlove this reboot');
 	});
 
+	test('rating line present when rating set', () => {
+		expect(renderComic(RECORD, '')).toContain('**Rating:** ⭐️⭐️⭐️⭐️ (4/5)');
+	});
+
+	test('rating 0 -> Rating line absent', () => {
+		const r = { ...RECORD, rating: '0', ratingStars: '' };
+		expect(renderComic(r, '')).not.toContain('**Rating:**');
+	});
+
 	test('no last_read_issue -> Progress line omitted', () => {
 		const r = { ...RECORD, lastReadIssue: '' };
 		expect(renderComic(r, '')).not.toContain('**Progress:**');

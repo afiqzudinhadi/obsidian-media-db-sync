@@ -24,6 +24,7 @@ tags: [games, game]
 **Game** · 2018-03-02 · Metacritic 79
 
 **Play Status:** Played
+**Rating:** ⭐️⭐️⭐️⭐️ (4/5)
 
 ## Synopsis
 From the creators of Human Resource Machine! Program a workforce of dumb humans to do your bidding in this fiendish puzzle game.
@@ -31,6 +32,9 @@ From the creators of Human Resource Machine! Program a workforce of dumb humans 
 **Developer:** Tomorrow Corporation
 **Publisher:** Tomorrow Corporation
 **Platforms:** PC
+
+## Links
+- [Steam](https://store.steampowered.com/app/792100/)
 
 ## My Notes
 

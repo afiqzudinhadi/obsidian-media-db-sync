@@ -1,6 +1,7 @@
 import type { LibraryNoteCtx, MediaTypeSpec, SpecDeps } from 'packages/obsidian/src/library/types';
 import { stripQuotes, extractMyNotes, extractCustomSections, type CustomSection } from 'packages/obsidian/src/watchlist/parse';
 import { yamlList, yamlScalar, quotedOrNull } from 'packages/obsidian/src/watchlist/yaml';
+import { deriveRating } from 'packages/obsidian/src/library/convert';
 
 const STEAM_STORE_BASE = 'https://store.steampowered.com';
 const RAWG_BASE = 'https://api.rawg.io/api';
@@ -45,17 +46,6 @@ export interface GameRecord {
 	poster: string | null;
 	url: string;
 	description: string;
-}
-
-function deriveRating(prev: Record<string, string>): { rating: string; ratingStars: string } {
-	const canonicalRating = stripQuotes(prev['rating']);
-	if (canonicalRating) return { rating: canonicalRating, ratingStars: stripQuotes(prev['rating_stars']) };
-	// skeleton conversion: legacy numeric `personalRating` field -> N stars
-	const legacy = Number(stripQuotes(prev['personalRating']));
-	if (Number.isFinite(legacy) && legacy > 0) {
-		return { rating: String(legacy), ratingStars: '⭐️'.repeat(legacy) };
-	}
-	return { rating: '0', ratingStars: '' };
 }
 
 function derivePlayStatus(prev: Record<string, string>): string {
@@ -150,13 +140,19 @@ export function renderGame(r: GameRecord, myNotes: string, customSections: Custo
 	if (r.poster) b.push(`![poster|200](${r.poster})`, '');
 	const meta = ['**Game**', ...[r.releaseDate, r.metacritic !== null ? `Metacritic ${r.metacritic}` : ''].filter(x => x)];
 	b.push(meta.join(' · '), '');
-	b.push(`**Play Status:** ${r.playStatus}`, '');
+	b.push(`**Play Status:** ${r.playStatus}`);
+	if (r.rating !== '0' && r.rating !== '' && r.ratingStars) b.push(`**Rating:** ${r.ratingStars} (${r.rating}/5)`);
+	b.push('');
 	if (r.description) b.push('## Synopsis', r.description, '');
 	const facts: string[] = [];
 	if (r.developer.length) facts.push(`**Developer:** ${r.developer.join(', ')}`);
 	if (r.publisher.length) facts.push(`**Publisher:** ${r.publisher.join(', ')}`);
 	if (r.platforms.length) facts.push(`**Platforms:** ${r.platforms.join(', ')}`);
 	if (facts.length) b.push(...facts, '');
+	const links: string[] = [];
+	if (r.steamAppid) links.push(`- [Steam](${STEAM_STORE_BASE}/app/${r.steamAppid}/)`);
+	if (r.rawgId && r.url) links.push(`- [RAWG](${r.url})`);
+	if (links.length) b.push('## Links', ...links, '');
 	for (const s of customSections) b.push(`## ${s.heading}`, s.content, '');
 	b.push('## My Notes', '', myNotes);
 	if (myNotes) b.push('');

@@ -22,6 +22,7 @@ tags: [books, book]
 **Book** · 1949 · 328 p.
 
 **Read Status:** Read
+**Rating:** ⭐️⭐️⭐️⭐️⭐️ (5/5)
 
 **Authors:** George Orwell
 
