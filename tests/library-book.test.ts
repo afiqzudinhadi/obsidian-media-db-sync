@@ -194,6 +194,12 @@ describe('bookSpec.isActive', () => {
 	test('olid set + Unread -> static', () => {
 		expect(bookSpec.isActive({ olid: 'OL1168083W', read_status: 'Unread' })).toBe(false);
 	});
+	test('olid set, read_status missing (post-resolve skeleton) -> active (C1)', () => {
+		expect(bookSpec.isActive({ olid: 'OL1168083W' })).toBe(true);
+	});
+	test('canonical enriched note (olid + read_status both present) -> static', () => {
+		expect(bookSpec.isActive({ olid: 'OL1168083W', read_status: 'Unread' })).toBe(false);
+	});
 });
 
 function ctxFor(fm: Record<string, string>, body = '## My Notes\n\n'): LibraryNoteCtx {

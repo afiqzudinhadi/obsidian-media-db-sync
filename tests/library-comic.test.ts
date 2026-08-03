@@ -235,6 +235,12 @@ describe('comicSpec.isActive', () => {
 	test('status Ended + read_status Unread -> static', () => {
 		expect(comicSpec.isActive({ comicvine_id: '195824', status: 'Ended', read_status: 'Unread' })).toBe(false);
 	});
+	test('comicvine_id set, status missing (post-resolve skeleton) -> active (C1)', () => {
+		expect(comicSpec.isActive({ comicvine_id: '195824' })).toBe(true);
+	});
+	test('canonical enriched note (status Ended, not Ongoing) -> static', () => {
+		expect(comicSpec.isActive({ comicvine_id: '195824', status: 'Ended', read_status: 'Read' })).toBe(false);
+	});
 });
 
 describe('comicSpec.resolve', () => {

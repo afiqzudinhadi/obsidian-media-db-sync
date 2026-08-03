@@ -126,9 +126,12 @@ export const bookSpec: MediaTypeSpec = {
 	},
 
 	isActive(fm: Record<string, string>): boolean {
-		// static once enriched; no chapter/issue sources, no flips -- only a missing
-		// olid ever makes a book note active again (a full sync bypasses this check)
-		return !stripQuotes(fm['olid']);
+		// active until the first real enrich has actually run: missing olid (never
+		// resolved) OR missing read_status (post-resolve skeleton -- canonical render
+		// always writes read_status, so its absence means sync() hasn't produced
+		// canonical output yet). Static once both are present; no chapter/issue sources,
+		// no flips -- a full sync bypasses this check regardless.
+		return !stripQuotes(fm['olid']) || !stripQuotes(fm['read_status']);
 	},
 
 	async resolve(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<Record<string, string> | null> {

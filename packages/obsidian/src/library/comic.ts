@@ -158,6 +158,9 @@ export const comicSpec: MediaTypeSpec = {
 
 	isActive(fm: Record<string, string>): boolean {
 		if (!stripQuotes(fm['comicvine_id'])) return true; // never enriched -> needs first pass
+		// post-resolve skeleton -- canonical render always writes status, so its absence
+		// means sync() hasn't produced canonical output yet
+		if (!stripQuotes(fm['status'])) return true;
 		if (stripQuotes(fm['status']) === 'Ongoing') return true;
 		if (stripQuotes(fm['read_status']) === 'Reading') return true;
 		return false;

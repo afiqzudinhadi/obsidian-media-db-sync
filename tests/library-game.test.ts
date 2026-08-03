@@ -266,13 +266,22 @@ describe('gameSpec.isActive', () => {
 	test('both ids empty -> active (needs first pass)', () => {
 		expect(gameSpec.isActive({})).toBe(true);
 	});
-	test('steam_appid set -> static', () => {
-		expect(gameSpec.isActive({ steam_appid: '792100' })).toBe(false);
+	test('steam_appid set + play_status set -> static', () => {
+		expect(gameSpec.isActive({ steam_appid: '792100', play_status: 'Unplayed' })).toBe(false);
 	});
-	test('rawg_id set -> static', () => {
-		expect(gameSpec.isActive({ rawg_id: '4200' })).toBe(false);
+	test('rawg_id set + play_status set -> static', () => {
+		expect(gameSpec.isActive({ rawg_id: '4200', play_status: 'Unplayed' })).toBe(false);
 	});
-	test('both set -> static, regardless of play_status', () => {
+	test('both ids set -> static, regardless of play_status', () => {
+		expect(gameSpec.isActive({ steam_appid: '792100', rawg_id: '4200', play_status: 'Played' })).toBe(false);
+	});
+	test('id set, play_status missing (post-resolve skeleton) -> active (C1)', () => {
+		expect(gameSpec.isActive({ steam_appid: '792100' })).toBe(true);
+	});
+	test('both ids set, play_status missing (post-resolve skeleton) -> active (C1)', () => {
+		expect(gameSpec.isActive({ steam_appid: '792100', rawg_id: '4200' })).toBe(true);
+	});
+	test('canonical enriched note -> static', () => {
 		expect(gameSpec.isActive({ steam_appid: '792100', rawg_id: '4200', play_status: 'Played' })).toBe(false);
 	});
 });

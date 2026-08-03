@@ -192,9 +192,12 @@ export const gameSpec: MediaTypeSpec = {
 	},
 
 	isActive(fm: Record<string, string>): boolean {
-		// static once either id is set; no chapter/issue-style automation exists for games --
-		// only missing both ids ever makes a game note active again (full sync bypasses this)
-		return !stripQuotes(fm['steam_appid']) && !stripQuotes(fm['rawg_id']);
+		// active until the first real enrich has actually run: both ids empty (never
+		// resolved) OR missing play_status (post-resolve skeleton -- canonical render
+		// always writes play_status, so its absence means sync() hasn't produced canonical
+		// output yet). Static once an id + play_status are present; no chapter/issue-style
+		// automation exists for games -- a full sync bypasses this check regardless.
+		return (!stripQuotes(fm['steam_appid']) && !stripQuotes(fm['rawg_id'])) || !stripQuotes(fm['play_status']);
 	},
 
 	async resolve(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<Record<string, string> | null> {
