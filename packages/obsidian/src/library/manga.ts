@@ -37,6 +37,13 @@ interface ChapterUpdate {
 	date: string;
 }
 
+/** `quotedOrNull` renders empty values as the literal `null` token -- strip that sentinel back
+ * to '' so a prior blank rss/last_chapter_date never round-trips as a truthy value (never fetched
+ * as a URL, never wins a string date comparison). */
+function stripNullSentinel(s: string): string {
+	return s === 'null' ? '' : s;
+}
+
 /**
  * Pure mapper: Jikan `/manga/{id}/full` payload (the unwrapped `data` object) + prev
  * frontmatter -> canonical MangaRecord. User-managed fields (read_status, rating,
@@ -52,7 +59,7 @@ export function buildManga(jikan: any, prev: Record<string, string>): MangaRecor
 	const { rating, ratingStars } = deriveRating(prev);
 	const readStatus = deriveReadStatus(prev);
 	const lastReadChapter = stripQuotes(prev['last_read_chapter']);
-	const rss = stripQuotes(prev['rss']);
+	const rss = stripNullSentinel(stripQuotes(prev['rss']));
 	const mangadexId = stripQuotes(prev['mangadex_id']);
 
 	const score = typeof jikan.score === 'number' ? Math.round(jikan.score * 10) / 10 : null;
@@ -65,7 +72,7 @@ export function buildManga(jikan: any, prev: Record<string, string>): MangaRecor
 		ratingStars,
 		lastReadChapter,
 		latestChapter: parseNumOrNull(prev['latest_chapter']),
-		lastChapterDate: stripQuotes(prev['last_chapter_date']),
+		lastChapterDate: stripNullSentinel(stripQuotes(prev['last_chapter_date'])),
 		chapters: jikan.chapters ?? null,
 		volumes: jikan.volumes ?? null,
 		status: jikan.status ?? '',
@@ -139,7 +146,7 @@ export function renderManga(r: MangaRecord, myNotes: string, customSections: Cus
 
 /** Chapter source cascade: rss (if set) -> mangadex_id (if set) -> null (leave unchanged). */
 async function resolveChapterUpdate(fm: Record<string, string>, deps: SpecDeps): Promise<ChapterUpdate | null> {
-	const rss = stripQuotes(fm['rss']);
+	const rss = stripNullSentinel(stripQuotes(fm['rss']));
 	if (rss) {
 		try {
 			const xml = await deps.httpText(rss, {});
@@ -185,6 +192,34 @@ async function resolveMalId(query: string, deps: SpecDeps): Promise<string | nul
 	return pick ? String(pick.mal_id) : null;
 }
 
+/** MangaDex `attributes.title` is a lang->string object; `attributes.altTitles` an array of the
+ * same shape -- collect every string value across both for the unique-exact title match. */
+function mangaDexTitles(r: any): string[] {
+	const titleObj: Record<string, string> = r?.attributes?.title ?? {};
+	const altTitleObjs: Record<string, string>[] = r?.attributes?.altTitles ?? [];
+	const titles = [...Object.values(titleObj), ...altTitleObjs.flatMap(o => Object.values(o))];
+	return titles.filter(Boolean).map((t: string) => String(t).toLowerCase());
+}
+
+/** Best-effort MangaDex id resolve, run only when the note has no mangadex_id yet. Failure of any
+ * kind (network error, no match, ambiguous match) is non-fatal to the overall resolve() -- it's
+ * logged and simply skipped, leaving the mal_id patch (if any) as the only result. */
+async function resolveMangadexId(query: string, deps: SpecDeps): Promise<string | null> {
+	try {
+		const qs = new URLSearchParams({ title: query, limit: '10' });
+		const res = await deps.http(`${MANGADEX_BASE}/manga?${qs.toString()}`, {});
+		const results: any[] = res?.data ?? [];
+		if (results.length === 0) return null;
+		const q = query.toLowerCase();
+		const exacts = results.filter(r => mangaDexTitles(r).includes(q));
+		const pick = exacts.length === 1 ? exacts[0] : exacts.length === 0 && results.length === 1 ? results[0] : null;
+		return pick?.id ? String(pick.id) : null;
+	} catch (e) {
+		deps.log(`manga mangadex resolve failed for "${query}": ${String(e)}`);
+		return null;
+	}
+}
+
 export const mangaSpec: MediaTypeSpec = {
 	typeName: 'manga',
 	itemType: 'manga_item',
@@ -202,20 +237,29 @@ export const mangaSpec: MediaTypeSpec = {
 		if (!malId || !status) return true; // never enriched -> needs first pass
 		if (status === 'Publishing' || status === 'On Hiatus') return true;
 		if (stripQuotes(fm['read_status']) === 'Reading') return true;
-		if (stripQuotes(fm['rss'])) return true;
+		if (stripNullSentinel(stripQuotes(fm['rss']))) return true;
 		return false; // Finished + Read/Unread/Dropped -> static
 	},
 
 	async resolve(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<Record<string, string> | null> {
 		const query = stripQuotes(ctx.frontmatter['title']) || ctx.filename.replace(/\.md$/, '');
 		if (!query) return null;
+		let malId: string | null;
 		try {
-			const malId = await resolveMalId(query, deps);
-			return malId ? { mal_id: malId } : null;
+			malId = await resolveMalId(query, deps);
 		} catch (e) {
 			deps.log(`manga resolve failed for "${query}": ${String(e)}`);
 			return null;
 		}
+		if (!malId) return null;
+
+		const patch: Record<string, string> = { mal_id: malId };
+		// best-effort: only attempt when the note doesn't already carry a mangadex_id
+		if (!stripQuotes(ctx.frontmatter['mangadex_id'])) {
+			const mangadexId = await resolveMangadexId(query, deps);
+			if (mangadexId) patch.mangadex_id = mangadexId;
+		}
+		return patch;
 	},
 
 	async sync(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<{ content: string; flipped: boolean } | null> {
@@ -236,16 +280,23 @@ export const mangaSpec: MediaTypeSpec = {
 		const record = buildManga(jikanData, fm);
 		const prevStatus = stripQuotes(fm['status']);
 		const prevLatestChapter = parseNumOrNull(fm['latest_chapter']);
-		const prevLastChapterDate = stripQuotes(fm['last_chapter_date']);
+		const prevLastChapterDate = stripNullSentinel(stripQuotes(fm['last_chapter_date']));
 
 		let flipped = false;
 		const newInfo = await resolveChapterUpdate(fm, deps);
 		if (newInfo) {
-			const isUpdate = newInfo.chapter !== null ? prevLatestChapter === null || newInfo.chapter > prevLatestChapter : !!newInfo.date && newInfo.date > prevLastChapterDate;
+			const chapterMode = newInfo.chapter !== null;
+			const prevPresent = chapterMode ? prevLatestChapter !== null : !!prevLastChapterDate;
+			const isUpdate = chapterMode
+				? prevLatestChapter === null || newInfo.chapter! > prevLatestChapter
+				: !prevLastChapterDate || (!!newInfo.date && newInfo.date > prevLastChapterDate);
 			if (isUpdate) {
 				record.latestChapter = newInfo.chapter;
 				if (newInfo.date) record.lastChapterDate = newInfo.date;
-				if (record.readStatus === 'Read') {
+				// seed pass (no prior stored baseline) -- record it as the new baseline, never
+				// flip/notify: mirrors watchlist build.ts's `prevLast &&` guard, there's no "new"
+				// chapter relative to an unknown starting point
+				if (prevPresent && record.readStatus === 'Read') {
 					record.readStatus = 'Unread';
 					flipped = true;
 					deps.notify(`«${record.title}» ch. ${newInfo.chapter ?? '?'} out`);

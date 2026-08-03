@@ -462,3 +462,26 @@ describe('comicSpec.sync — issue flip', () => {
 		expect(result!.content).toContain('latest_issue: 10');
 	});
 });
+
+describe('comicSpec.sync — seed pass (I3): no stored latest_issue never flips even when Read', () => {
+	test('Read comic, no stored latest_issue, API issue 10 -> seeds latest_issue, read_status stays Read, no notify', async () => {
+		const deps = makeDeps({ http: async () => comicvineFixture, getKey: () => 'cvkey' });
+		const fm = { comicvine_id: '195824', read_status: 'Read' };
+		const result = await comicSpec.sync(ctxFor(fm), deps);
+		expect(result!.flipped).toBe(false);
+		expect(result!.content).toContain('latest_issue: 10');
+		expect(result!.content).toContain('read_status: Read');
+		expect(deps.notifyCalls).toEqual([]);
+	});
+
+	test('subsequent sync with a higher issue number -> flip + notify (baseline now present)', async () => {
+		const cvNext = { results: { ...CV_RESULT, last_issue: { issue_number: '11', name: 'Next Issue' } } };
+		const deps = makeDeps({ http: async () => cvNext, getKey: () => 'cvkey' });
+		const fm = { comicvine_id: '195824', read_status: 'Read', latest_issue: '10' };
+		const result = await comicSpec.sync(ctxFor(fm), deps);
+		expect(result!.flipped).toBe(true);
+		expect(result!.content).toContain('latest_issue: 11');
+		expect(result!.content).toContain('read_status: Unread');
+		expect(deps.notifyCalls).toEqual(['«Absolute Batman» issue 11 out']);
+	});
+});

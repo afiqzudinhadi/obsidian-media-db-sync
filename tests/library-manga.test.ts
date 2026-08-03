@@ -46,6 +46,12 @@ const RSS_NUMBERLESS = `<?xml version="1.0"?>
 <item><title>Chainsaw Man - Extra Announcement</title><pubDate>Thu, 30 Jul 2026 12:00:00 GMT</pubDate><guid>a</guid></item>
 </channel></rss>`;
 
+const RSS_215 = `<?xml version="1.0"?>
+<rss version="2.0"><channel>
+<item><title>Chainsaw Man Chapter 215</title><pubDate>Thu, 06 Aug 2026 12:00:00 GMT</pubDate><guid>215</guid></item>
+<item><title>Chainsaw Man Chapter 214</title><pubDate>Thu, 30 Jul 2026 12:00:00 GMT</pubDate><guid>214</guid></item>
+</channel></rss>`;
+
 describe('buildManga field mapping', () => {
 	const r = buildManga(JIKAN_DATA, EMPTY_PREV);
 	test('core fields', () => {
@@ -237,6 +243,9 @@ describe('mangaSpec.isActive', () => {
 	});
 	test('Finished + Unread -> static', () => {
 		expect(mangaSpec.isActive({ mal_id: '1', status: 'Finished', read_status: 'Unread' })).toBe(false);
+	});
+	test('Finished + rss rendered as literal "null" sentinel -> not read as truthy, static (C2)', () => {
+		expect(mangaSpec.isActive({ mal_id: '1', status: 'Finished', read_status: 'Read', rss: 'null' })).toBe(false);
 	});
 });
 
@@ -463,6 +472,94 @@ describe('mangaSpec.sync — carry-forward: noise item does not win over real ch
 	});
 });
 
+describe('mangaSpec.sync — rss/last_chapter_date null-sentinel guard (C2)', () => {
+	test('rss stored as literal "null" string (already-broken note) -> not fetched, treated as empty', async () => {
+		let httpTextCalledWith: string | null = null;
+		const deps = makeDeps({
+			http: async () => jikanFixture,
+			httpText: async (url: string) => {
+				httpTextCalledWith = url;
+				return '';
+			},
+		});
+		const fm = { mal_id: '116778', rss: 'null', read_status: 'Read', latest_chapter: '213', last_chapter_date: '2026-07-16' };
+		const result = await mangaSpec.sync(ctxFor(fm), deps);
+		expect(httpTextCalledWith).toBeNull();
+		expect(result!.content).toContain('rss: null');
+		expect(result!.flipped).toBe(false);
+	});
+
+	test('render(parse(render)) idempotent w/ empty rss -- second sync byte-stable, never fetches "null"', async () => {
+		const httpTextCalls: string[] = [];
+		const deps = makeDeps({
+			http: async () => jikanFixture,
+			httpText: async (url: string) => {
+				httpTextCalls.push(url);
+				return '';
+			},
+		});
+		const fm1 = { mal_id: '116778', read_status: 'Read', latest_chapter: '213', last_chapter_date: '2026-07-16' };
+		const first = await mangaSpec.sync(ctxFor(fm1), deps);
+		expect(first!.content).toContain('rss: null');
+
+		const fmMatch = /^---\n([\s\S]*?)\n---/.exec(first!.content)!;
+		const fm2: Record<string, string> = {};
+		for (const line of fmMatch[1].split('\n')) {
+			const m = /^([A-Za-z0-9_]+):\s*(.*)$/.exec(line);
+			if (m) fm2[m[1]] = m[2];
+		}
+		expect(fm2['rss']).toBe('null'); // confirms the sentinel round-trips through parse as raw input
+
+		const second = await mangaSpec.sync(ctxFor(fm2), deps);
+		expect(second!.content).toBe(first!.content);
+		expect(httpTextCalls).toEqual([]); // rss never truthy after sanitizing -> httpText never called, let alone with 'null'
+	});
+
+	test('last_chapter_date stored as literal "null" -- date-mode comparison not poisoned, treated as seed', async () => {
+		const deps = makeDeps({ http: async () => jikanFixture, httpText: async () => RSS_NUMBERLESS });
+		const fm = { mal_id: '116778', rss: 'https://x.y/f.xml', read_status: 'Read', latest_chapter: '', last_chapter_date: 'null' };
+		const result = await mangaSpec.sync(ctxFor(fm), deps);
+		expect(result!.flipped).toBe(false); // sanitized to '' -> seed pass, never flips
+		expect(result!.content).toContain('last_chapter_date: 2026-07-30');
+		expect(deps.notifyCalls).toEqual([]);
+	});
+});
+
+describe('mangaSpec.sync — seed pass (I3): no stored baseline never flips even when Read', () => {
+	test('Read manga, no stored latest_chapter, rss reports chapter 214 -> seeds latest_chapter, read_status stays Read, no notify', async () => {
+		const deps = makeDeps({ http: async () => jikanFixture, httpText: async () => RSS_214 });
+		const fm = { mal_id: '116778', rss: 'https://x.y/f.xml', read_status: 'Read' };
+		const result = await mangaSpec.sync(ctxFor(fm), deps);
+		expect(result!.flipped).toBe(false);
+		expect(result!.content).toContain('latest_chapter: 214');
+		expect(result!.content).toContain('read_status: Read');
+		expect(deps.notifyCalls).toEqual([]);
+	});
+
+	test('seed pass then a later sync with a higher chapter -> flip + notify only on the second sync', async () => {
+		const deps = makeDeps({ http: async () => jikanFixture, httpText: async () => RSS_214 });
+		const fm1 = { mal_id: '116778', rss: 'https://x.y/f.xml', read_status: 'Read' };
+		const first = await mangaSpec.sync(ctxFor(fm1), deps);
+		expect(first!.flipped).toBe(false);
+		expect(first!.content).toContain('latest_chapter: 214');
+		expect(deps.notifyCalls).toEqual([]);
+
+		const fmMatch = /^---\n([\s\S]*?)\n---/.exec(first!.content)!;
+		const fm2: Record<string, string> = {};
+		for (const line of fmMatch[1].split('\n')) {
+			const m = /^([A-Za-z0-9_]+):\s*(.*)$/.exec(line);
+			if (m) fm2[m[1]] = m[2];
+		}
+
+		const deps2 = makeDeps({ http: async () => jikanFixture, httpText: async () => RSS_215 });
+		const second = await mangaSpec.sync(ctxFor(fm2), deps2);
+		expect(second!.flipped).toBe(true);
+		expect(second!.content).toContain('latest_chapter: 215');
+		expect(second!.content).toContain('read_status: Unread');
+		expect(deps2.notifyCalls).toEqual(['«Chainsaw Man» ch. 215 out']);
+	});
+});
+
 describe('mangaSpec.resolve', () => {
 	test('unique exact title match -> accepted', async () => {
 		const deps = makeDeps({
@@ -504,5 +601,73 @@ describe('mangaSpec.resolve', () => {
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
 		expect(result).toBeNull();
 		expect(deps.logCalls.length).toBeGreaterThan(0);
+	});
+});
+
+describe('mangaSpec.resolve — best-effort MangaDex id resolve (I4)', () => {
+	const jikanMatch = { data: [{ mal_id: 116778, title: 'Chainsaw Man', title_english: 'Chainsaw Man' }] };
+
+	test('mal_id resolved, no mangadex_id in fm -> mangadex title search attempted, exact en-title match patches both ids', async () => {
+		const deps = makeDeps({
+			http: async (url: string) => {
+				if (url.includes('mangadex.org')) return { data: [{ id: 'a1b2c3d4-uuid', attributes: { title: { en: 'Chainsaw Man' }, altTitles: [{ ja: 'チェンソーマン' }] } }] };
+				return jikanMatch;
+			},
+		});
+		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
+		expect(result).toEqual({ mal_id: '116778', mangadex_id: 'a1b2c3d4-uuid' });
+	});
+
+	test('mangadex search no exact match, sole result -> accepted (unique-exact fallback rule)', async () => {
+		const deps = makeDeps({
+			http: async (url: string) => {
+				if (url.includes('mangadex.org')) return { data: [{ id: 'uuid-solo', attributes: { title: { en: 'Chainsaw Man: The Movie' } } }] };
+				return jikanMatch;
+			},
+		});
+		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
+		expect(result).toEqual({ mal_id: '116778', mangadex_id: 'uuid-solo' });
+	});
+
+	test('mangadex search ambiguous (multiple results, no exact match) -> mal_id patched only', async () => {
+		const deps = makeDeps({
+			http: async (url: string) => {
+				if (url.includes('mangadex.org'))
+					return {
+						data: [
+							{ id: 'uuid-1', attributes: { title: { en: 'Something Else' } } },
+							{ id: 'uuid-2', attributes: { title: { en: 'Another Title' } } },
+						],
+					};
+				return jikanMatch;
+			},
+		});
+		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
+		expect(result).toEqual({ mal_id: '116778' });
+	});
+
+	test('mangadex search throws -> log, mal_id patched only (best-effort, no overall failure)', async () => {
+		const deps = makeDeps({
+			http: async (url: string) => {
+				if (url.includes('mangadex.org')) throw new Error('mangadex down');
+				return jikanMatch;
+			},
+		});
+		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
+		expect(result).toEqual({ mal_id: '116778' });
+		expect(deps.logCalls.some(m => m.toLowerCase().includes('mangadex'))).toBe(true);
+	});
+
+	test('mangadex_id already present in fm -> mangadex search skipped entirely', async () => {
+		let mangadexCalled = false;
+		const deps = makeDeps({
+			http: async (url: string) => {
+				if (url.includes('mangadex.org')) mangadexCalled = true;
+				return jikanMatch;
+			},
+		});
+		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man', mangadex_id: 'existing-uuid' }, ''), deps);
+		expect(result).toEqual({ mal_id: '116778' });
+		expect(mangadexCalled).toBe(false);
 	});
 });

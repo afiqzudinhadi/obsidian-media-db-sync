@@ -222,8 +222,12 @@ export const comicSpec: MediaTypeSpec = {
 
 		let flipped = false;
 		if (Number.isFinite(candidate)) {
-			const isUpdate = prevLatestIssue === null || candidate > prevLatestIssue;
-			if (isUpdate) {
+			if (prevLatestIssue === null) {
+				// seed pass: first-ever observed issue number, nothing to compare against yet --
+				// record it as the baseline, never flip/notify (mirrors watchlist build.ts's
+				// `prevLast &&` guard: there's no "new" issue relative to an unknown starting point)
+				record.latestIssue = candidate;
+			} else if (candidate > prevLatestIssue) {
 				record.latestIssue = candidate;
 				if (record.readStatus === 'Read') {
 					record.readStatus = 'Unread';
