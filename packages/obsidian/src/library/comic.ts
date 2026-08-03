@@ -1,0 +1,261 @@
+import type { LibraryNoteCtx, MediaTypeSpec, SpecDeps } from 'packages/obsidian/src/library/types';
+import { stripQuotes, extractMyNotes, extractCustomSections, type CustomSection } from 'packages/obsidian/src/watchlist/parse';
+import { yamlList, yamlScalar, quotedOrNull } from 'packages/obsidian/src/watchlist/yaml';
+
+const COMICVINE_BASE = 'https://comicvine.gamespot.com/api';
+
+export interface ComicRecord {
+	title: string;
+	readStatus: string;
+	rating: string;
+	ratingStars: string;
+	lastReadIssue: string;
+	latestIssue: number | null;
+	issues: number | null;
+	status: string;
+	publisher: string;
+	people: string[];
+	startYear: string;
+	comicvineId: string;
+	poster: string | null;
+	url: string;
+	description: string;
+}
+
+function parseNumOrNull(raw: string | undefined): number | null {
+	const s = stripQuotes(raw);
+	if (!s || s === 'null') return null;
+	const n = Number(s);
+	return Number.isFinite(n) ? n : null;
+}
+
+function deriveReadStatus(prev: Record<string, string>): string {
+	const canonical = stripQuotes(prev['read_status']);
+	if (canonical) return canonical;
+	// skeleton conversion: legacy boolean `read` field
+	return stripQuotes(prev['read']) === 'true' ? 'Read' : 'Unread';
+}
+
+function deriveRating(prev: Record<string, string>): { rating: string; ratingStars: string } {
+	const canonicalRating = stripQuotes(prev['rating']);
+	if (canonicalRating) return { rating: canonicalRating, ratingStars: stripQuotes(prev['rating_stars']) };
+	// skeleton conversion: legacy numeric `personalRating` field -> N stars
+	const legacy = Number(stripQuotes(prev['personalRating']));
+	if (Number.isFinite(legacy) && legacy > 0) {
+		return { rating: String(legacy), ratingStars: '⭐️'.repeat(legacy) };
+	}
+	return { rating: '0', ratingStars: '' };
+}
+
+/**
+ * status is a manual/passthrough field -- Comic Vine's volume payload carries no reliable
+ * "still publishing" signal (no last-issue date), so we deliberately do NOT invent any
+ * date-based heuristic here. Whatever the note already has wins; only a never-synced note
+ * (empty status) defaults to 'Ongoing'.
+ */
+function deriveStatus(prev: Record<string, string>): string {
+	return stripQuotes(prev['status']) || 'Ongoing';
+}
+
+function decodeEntities(raw: string): string {
+	return raw
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;/g, "'")
+		.replace(/&nbsp;/g, ' ')
+		.replace(/&amp;/g, '&');
+}
+
+/**
+ * Comic Vine `description` -> plain text: split on <p> blocks (whole string treated as one
+ * block when there are none), strip remaining tags, decode entities, collapse whitespace,
+ * keep only the first 2 paragraphs.
+ */
+export function htmlToPlainText(html: string): string {
+	if (!html) return '';
+	const paraMatches = html.match(/<p[^>]*>([\s\S]*?)<\/p>/gi);
+	const blocks = paraMatches && paraMatches.length ? paraMatches : [html];
+	const paragraphs = blocks
+		.map(b => decodeEntities(b.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim())
+		.filter(Boolean);
+	return paragraphs.slice(0, 2).join('\n\n');
+}
+
+/**
+ * Pure mapper: Comic Vine `/volume/{id}/` payload (the unwrapped `results` object) + prev
+ * frontmatter -> canonical ComicRecord. User-managed fields (read_status, rating,
+ * rating_stars, last_read_issue, status) are preserved from prev (with legacy-skeleton
+ * fallback); latest_issue is carried from prev as-is here -- sync() alone decides whether a
+ * new last_issue.issue_number supersedes it (and whether that flips read_status). Everything
+ * else is freshly derived from the Comic Vine response on every call.
+ */
+export function buildComic(cv: any, prev: Record<string, string>): ComicRecord {
+	const title: string = cv.name ?? '';
+	const { rating, ratingStars } = deriveRating(prev);
+	const readStatus = deriveReadStatus(prev);
+	const lastReadIssue = stripQuotes(prev['last_read_issue']);
+	const comicvineId = cv.id != null ? String(cv.id) : stripQuotes(prev['comicvine_id']);
+
+	return {
+		title,
+		readStatus,
+		rating,
+		ratingStars,
+		lastReadIssue,
+		latestIssue: parseNumOrNull(prev['latest_issue']),
+		issues: typeof cv.count_of_issues === 'number' ? cv.count_of_issues : null,
+		status: deriveStatus(prev),
+		publisher: cv.publisher?.name ?? '',
+		people: Array.isArray(cv.people) ? cv.people.map((p: any) => p.name).filter(Boolean) : [],
+		startYear: cv.start_year != null ? String(cv.start_year) : '',
+		comicvineId,
+		poster: cv.image?.original_url ?? null,
+		url: cv.site_detail_url ?? '',
+		description: htmlToPlainText(cv.description ?? ''),
+	};
+}
+
+export function renderComic(r: ComicRecord, myNotes: string, customSections: CustomSection[] = []): string {
+	const fm = [
+		'---',
+		'type: comic_item',
+		`title: ${yamlScalar(r.title)}`,
+		`read_status: ${r.readStatus}`,
+		`rating: ${r.rating}`,
+		`rating_stars: ${r.ratingStars}`,
+		`last_read_issue: ${r.lastReadIssue}`,
+		`latest_issue: ${r.latestIssue ?? 'null'}`,
+		`issues: ${r.issues ?? 'null'}`,
+		`status: ${r.status}`,
+		`publisher: ${yamlScalar(r.publisher)}`,
+		`people: ${yamlList(r.people)}`,
+		`start_year: ${r.startYear}`,
+		`comicvine_id: ${r.comicvineId}`,
+		`poster: ${quotedOrNull(r.poster)}`,
+		`url: ${quotedOrNull(r.url)}`,
+		'tags: [comics, comic]',
+		'---',
+	];
+
+	const b: string[] = ['', `# ${r.title}`, ''];
+	if (r.poster) b.push(`![poster|200](${r.poster})`, '');
+	const meta = ['**Comic**', ...[r.status, r.startYear].filter(x => x)];
+	b.push(meta.join(' · '), '');
+	b.push(`**Read Status:** ${r.readStatus}`);
+	if (r.lastReadIssue) {
+		const denom = r.latestIssue ?? r.issues ?? '?';
+		b.push(`**Progress:** issue ${r.lastReadIssue} / ${denom}`);
+	}
+	b.push('');
+	if (r.description) b.push('## Synopsis', r.description, '');
+	const facts: string[] = [];
+	if (r.publisher) facts.push(`**Publisher:** ${r.publisher}`);
+	if (r.people.length) facts.push(`**Creators:** ${r.people.join(', ')}`);
+	if (facts.length) b.push(...facts, '');
+	const links: string[] = [];
+	if (r.url) links.push(`- [Comic Vine](${r.url})`);
+	if (links.length) b.push('## Links', ...links, '');
+	for (const s of customSections) b.push(`## ${s.heading}`, s.content, '');
+	b.push('## My Notes', '', myNotes);
+	if (myNotes) b.push('');
+	return fm.join('\n') + '\n' + b.join('\n');
+}
+
+async function fetchVolumeResults(query: string, key: string, deps: SpecDeps): Promise<any[]> {
+	const qs = new URLSearchParams({ api_key: key, format: 'json', filter: `name:${query}`, limit: '10' });
+	const res = await deps.http(`${COMICVINE_BASE}/volumes/?${qs.toString()}`, {});
+	return Array.isArray(res?.results) ? res.results : [];
+}
+
+export const comicSpec: MediaTypeSpec = {
+	typeName: 'comic',
+	itemType: 'comic_item',
+	folderSettingKey: 'libraryComicFolder',
+	enabledSettingKey: 'libraryComicEnabled',
+	throttleMs: 350,
+
+	hasId(fm: Record<string, string>): boolean {
+		return !!stripQuotes(fm['comicvine_id']);
+	},
+
+	isActive(fm: Record<string, string>): boolean {
+		if (!stripQuotes(fm['comicvine_id'])) return true; // never enriched -> needs first pass
+		if (stripQuotes(fm['status']) === 'Ongoing') return true;
+		if (stripQuotes(fm['read_status']) === 'Reading') return true;
+		return false;
+	},
+
+	async resolve(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<Record<string, string> | null> {
+		const key = deps.getKey('comicvine');
+		if (!key) {
+			deps.log('comic resolve: no Comic Vine key configured, skipping id lookup');
+			return null;
+		}
+		const query = stripQuotes(ctx.frontmatter['title']) || ctx.filename.replace(/\.md$/, '');
+		if (!query) return null;
+		try {
+			const results = await fetchVolumeResults(query, key, deps);
+			if (results.length === 0) return null;
+			const q = query.toLowerCase();
+			const exacts = results.filter(r => String(r.name ?? '').toLowerCase() === q);
+			const pick = exacts.length === 1 ? exacts[0] : exacts.length === 0 && results.length === 1 ? results[0] : null;
+			return pick && pick.id != null ? { comicvine_id: String(pick.id) } : null;
+		} catch (e) {
+			deps.log(`comic resolve failed for "${query}": ${String(e)}`);
+			return null;
+		}
+	},
+
+	async sync(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<{ content: string; flipped: boolean } | null> {
+		const fm = ctx.frontmatter;
+		const id = stripQuotes(fm['comicvine_id']);
+		if (!id) return null; // needs resolve() first
+
+		const key = deps.getKey('comicvine');
+		if (!key) {
+			deps.log(`comic sync: no Comic Vine key configured, skipping comicvine_id ${id}`);
+			return null;
+		}
+
+		let json: any;
+		try {
+			const qs = new URLSearchParams({ api_key: key, format: 'json' });
+			json = await deps.http(`${COMICVINE_BASE}/volume/4050-${id}/?${qs.toString()}`, {});
+		} catch (e) {
+			deps.log(`comic comicvine fetch failed (comicvine_id ${id}): ${String(e)}`);
+			return null;
+		}
+
+		const result = json?.results;
+		if (!result || !result.name || (result.id != null && String(result.id) !== id)) {
+			// identity-guard: never silently swap to a different volume's data; leave the note
+			// untouched (id fields preserved) when the response is missing or mismatched.
+			deps.log(`comic comicvine volume fetch returned no usable data for comicvine_id ${id}`);
+			return null;
+		}
+
+		const record = buildComic(result, fm);
+		const prevLatestIssue = parseNumOrNull(fm['latest_issue']);
+		const rawIssueNumber = result.last_issue?.issue_number;
+		const candidate = rawIssueNumber != null ? parseFloat(String(rawIssueNumber)) : NaN;
+
+		let flipped = false;
+		if (Number.isFinite(candidate)) {
+			const isUpdate = prevLatestIssue === null || candidate > prevLatestIssue;
+			if (isUpdate) {
+				record.latestIssue = candidate;
+				if (record.readStatus === 'Read') {
+					record.readStatus = 'Unread';
+					flipped = true;
+					deps.notify(`«${record.title}» issue ${candidate} out`);
+				}
+			}
+		}
+		// non-numeric or missing last_issue.issue_number -> skip flip, keep prev latest_issue
+		// (already set by buildComic above, untouched here)
+
+		const content = renderComic(record, extractMyNotes(ctx.body), extractCustomSections(ctx.body));
+		return { content, flipped };
+	},
+};

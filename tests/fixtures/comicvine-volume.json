@@ -1,0 +1,18 @@
+{
+	"results": {
+		"id": 195824,
+		"name": "Absolute Batman",
+		"publisher": { "id": 10, "name": "DC Comics" },
+		"count_of_issues": 10,
+		"last_issue": { "issue_number": "10", "name": "Zoo Year, Part Ten" },
+		"start_year": "2024",
+		"image": { "original_url": "https://comicvine.gamespot.com/a/uploads/original/11/absolute-batman.jpg" },
+		"description": "<p>Batman faces a terrifying new criminal underworld as Gotham City's elite turn against him in this bold reimagining.</p><p>Written by Scott Snyder with art by Nick Dragotta, the series reinvents Bruce Wayne's origin from the ground up.</p><p>This paragraph exists only to verify the two-paragraph cap trims it from the rendered synopsis.</p>",
+		"site_detail_url": "https://comicvine.gamespot.com/absolute-batman/4050-195824/",
+		"people": [
+			{ "id": 1, "name": "Scott Snyder" },
+			{ "id": 2, "name": "Nick Dragotta" }
+		],
+		"date_last_updated": "2026-07-20 10:00:00"
+	}
+}
