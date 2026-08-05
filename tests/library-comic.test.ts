@@ -329,6 +329,16 @@ describe('comicSpec.resolve', () => {
 		const result = await comicSpec.resolve(ctx, deps);
 		expect(result).toBeNull();
 	});
+
+	test('Comic Vine error envelope (invalid key) -> null, logged', async () => {
+		const deps = makeDeps({
+			http: async () => ({ error: 'Invalid API Key', status_code: 100, results: [] }),
+			getKey: () => 'bad-key',
+		});
+		const result = await comicSpec.resolve(ctxFor({ title: 'Absolute Batman' }), deps);
+		expect(result).toBeNull();
+		expect(deps.logCalls.some(m => m.includes('Invalid API Key'))).toBe(true);
+	});
 });
 
 describe('comicSpec.sync — no id / no key', () => {
@@ -383,6 +393,17 @@ describe('comicSpec.sync — comicvine enrich', () => {
 		expect(result!.content).toContain('publisher: DC Comics');
 		expect(result!.content).toContain('issues: 10');
 		expect(deps.notifyCalls).toEqual([]);
+	});
+
+	test('Comic Vine error envelope (invalid key) -> null, notify + log', async () => {
+		const deps = makeDeps({
+			http: async () => ({ error: 'Invalid API Key', status_code: 100, results: [] }),
+			getKey: () => 'bad-key',
+		});
+		const result = await comicSpec.sync(ctxFor({ comicvine_id: '195824' }), deps);
+		expect(result).toBeNull();
+		expect(deps.notifyCalls.some(m => m.includes('Invalid API Key'))).toBe(true);
+		expect(deps.logCalls.some(m => m.includes('Invalid API Key'))).toBe(true);
 	});
 
 	test('fetches from GET /volume/4050-{id}/ with api_key + format=json', async () => {

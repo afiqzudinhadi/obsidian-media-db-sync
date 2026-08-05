@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { MediaTypeSpec } from 'packages/obsidian/src/library/types';
 import { bookSpec } from 'packages/obsidian/src/library/book';
 import { gameSpec } from 'packages/obsidian/src/library/game';
 import { LibraryController } from 'packages/obsidian/src/library/LibraryController';
@@ -419,5 +420,44 @@ describe('dry-run notify suppression (minor)', () => {
 		// what must NOT happen is the spec's flip-notify reaching a real Notice
 		expect(notices.some(m => m.includes('«Test Manga» ch. 5 out'))).toBe(false);
 		expect(logs.some(m => m.includes('«Test Manga» ch. 5 out'))).toBe(true);
+	});
+});
+
+describe('sync summary transparency', () => {
+	test('scanned + no-data counts surface in summary notice, not hidden behind a silent-looking 0/0', async () => {
+		const c = new LibraryController(fakePlugin());
+		const notices: string[] = [];
+		(c as any).notify = (msg: string) => notices.push(msg);
+		(c as any).makeDeps = () => ({
+			listNotes: async () => [{ path: 'Mangas/Test.md' }],
+			readNote: async () => 'content',
+			writeNote: async () => {},
+			sleep: async () => {},
+			log: () => {},
+			specDeps: fakeSpecDeps(),
+		});
+
+		// simulates e.g. a Comic Vine error-envelope: fetch "succeeds" (no throw) but spec.sync
+		// has no usable data -> counted as skippedNoData rather than a written/errors change
+		const noDataSpec: MediaTypeSpec = {
+			typeName: 'manga',
+			itemType: 'manga_item',
+			folderSettingKey: 'libraryMangaFolder',
+			enabledSettingKey: 'libraryMangaEnabled',
+			throttleMs: 0,
+			hasId: () => true,
+			isActive: () => true,
+			resolve: async () => null,
+			sync: async () => null,
+		};
+
+		const report = await c.syncType(noDataSpec, false);
+
+		expect(report.scanned).toBe(1);
+		expect(report.skippedNoData).toBe(1);
+		expect(notices.length).toBe(1);
+		expect(notices[0]).toContain('1 scanned');
+		expect(notices[0]).toContain('0 ok');
+		expect(notices[0]).toContain('1 no-data (see console)');
 	});
 });

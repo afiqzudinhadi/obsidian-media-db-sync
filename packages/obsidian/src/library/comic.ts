@@ -139,9 +139,27 @@ export function renderComic(r: ComicRecord, myNotes: string, customSections: Cus
 	return fm.join('\n') + '\n' + b.join('\n');
 }
 
-async function fetchVolumeResults(query: string, key: string, deps: SpecDeps): Promise<any[]> {
+/**
+ * Comic Vine returns HTTP 200 even on auth/request failures -- the real signal is the
+ * envelope's `status_code` (1 = OK; anything else carries a human-readable `error`, e.g.
+ * "Invalid API Key"). Left un-checked, callers see empty `results` and treat it as
+ * "nothing found" instead of a real failure. `status_code` absent entirely (as in older
+ * hand-built test fixtures) is treated as OK -- only an explicit non-1 code trips this.
+ */
+function checkEnvelope(data: any, deps: SpecDeps): boolean {
+	if (data && data.status_code !== undefined && data.status_code !== 1) {
+		const msg = data.error || 'Unknown error';
+		deps.log(`Comic Vine error: ${msg}`);
+		deps.notify(`Comic Vine: ${msg}`);
+		return false;
+	}
+	return true;
+}
+
+async function fetchVolumeResults(query: string, key: string, deps: SpecDeps): Promise<any[] | null> {
 	const qs = new URLSearchParams({ api_key: key, format: 'json', filter: `name:${query}`, limit: '10' });
 	const res = await deps.http(`${COMICVINE_BASE}/volumes/?${qs.toString()}`, {});
+	if (!checkEnvelope(res, deps)) return null;
 	return Array.isArray(res?.results) ? res.results : [];
 }
 
@@ -183,6 +201,7 @@ export const comicSpec: MediaTypeSpec = {
 		if (!query) return null;
 		try {
 			const results = await fetchVolumeResults(query, key, deps);
+			if (results === null) return null; // envelope error already logged/notified
 			if (results.length === 0) return null;
 			const q = query.toLowerCase();
 			const exacts = results.filter(r => String(r.name ?? '').toLowerCase() === q);
@@ -217,6 +236,8 @@ export const comicSpec: MediaTypeSpec = {
 			deps.log(`comic comicvine fetch failed (comicvine_id ${id}): ${String(e)}`);
 			return null;
 		}
+
+		if (!checkEnvelope(json, deps)) return null;
 
 		const result = json?.results;
 		if (!result || !result.name || (result.id != null && String(result.id) !== id)) {

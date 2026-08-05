@@ -146,17 +146,25 @@ export class LibraryController {
 		}
 	}
 
+	/** Surfaces every counter, not just synced/written/flipped -- a run where fetches are
+	 * silently failing (e.g. Comic Vine error envelope) must not read as an empty-but-clean
+	 * success just because skippedNoData/errors were left out of the message. */
+	private buildSyncSummary(spec: MediaTypeSpec, mode: string, report: LibraryReport): string {
+		let msg = `Library ${mode}sync (${spec.typeName}): ${report.scanned} scanned, ${report.synced} ok, ${report.written} updated, ${report.flipped.length} flipped`;
+		if (report.skippedStatic) msg += `, ${report.skippedStatic} static`;
+		if (report.skippedNoId) msg += `, ${report.skippedNoId} no-id`;
+		if (report.skippedNoData) msg += `, ${report.skippedNoData} no-data (see console)`;
+		if (report.errors.length) msg += `, ${report.errors.length} errors (see console)`;
+		return msg;
+	}
+
 	private async runSync(spec: MediaTypeSpec, full: boolean, dryRun: boolean, quiet: boolean): Promise<LibraryReport> {
 		this.warnMissingKey(spec, quiet);
 		const deps = this.makeDeps(spec, dryRun);
 		const report = await libraryFolderSync(spec, deps, { full, dryRun });
 		const mode = dryRun ? 'DRY-RUN ' : '';
 		if (shouldNotifySync(quiet, report.written, report.errors.length)) {
-			this.notify(
-				`Library ${mode}sync (${spec.typeName}): ${report.synced} checked, ${report.written} updated, ${report.flipped.length} flipped` +
-					(report.errors.length ? `, ${report.errors.length} errors (see console)` : ''),
-				0,
-			);
+			this.notify(this.buildSyncSummary(spec, mode, report), 0);
 		}
 		return report;
 	}
