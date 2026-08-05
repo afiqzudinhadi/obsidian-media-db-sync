@@ -1,4 +1,4 @@
-import type { LibraryNoteCtx, MediaTypeSpec, SpecDeps } from 'packages/obsidian/src/library/types';
+import type { LibraryNoteCtx, MediaTypeSpec, ResolveCandidate, ResolveOutcome, SpecDeps } from 'packages/obsidian/src/library/types';
 import { stripQuotes, extractMyNotes, extractCustomSections, type CustomSection } from 'packages/obsidian/src/watchlist/parse';
 import { yamlList, yamlScalar, quotedOrNull } from 'packages/obsidian/src/watchlist/yaml';
 import { deriveRating } from 'packages/obsidian/src/library/convert';
@@ -173,6 +173,12 @@ function candidateSummary(label: string, id: unknown, name: string, year?: strin
 	return `${label}=${id ?? ''} «${name}»${year ? ` (${year})` : ''}`;
 }
 
+/** Human-readable picker label for a Steam storesearch item -- Steam's search payload carries no
+ * year/date, so name is all there is to show (matches what candidateSummary already logs for it). */
+function steamCandidateLabel(it: any): string {
+	return String(it?.name ?? '');
+}
+
 async function fetchSteamSearch(query: string, deps: SpecDeps): Promise<any[]> {
 	const qs = new URLSearchParams({ term: query, cc: 'us', l: 'en' });
 	const res = await deps.http(`${STEAM_STORE_BASE}/api/storesearch/?${qs.toString()}`, {});
@@ -205,21 +211,30 @@ export const gameSpec: MediaTypeSpec = {
 		return (!stripQuotes(fm['steam_appid']) && !stripQuotes(fm['rawg_id'])) || !stripQuotes(fm['play_status']);
 	},
 
-	async resolve(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<Record<string, string> | null> {
+	// Steam-primary: RAWG is still tried as a fallback on a Steam ambiguous/miss (unchanged). Only
+	// when NEITHER source lands a unique match do Steam's ambiguous results (if any) come back as
+	// candidates for the user to pick from, instead of a bare null -- RAWG-only ambiguity (Steam
+	// had 0/1 results) still returns null unchanged.
+	async resolve(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<ResolveOutcome | null> {
 		// fastest, no-network path: 28/31 real game notes already carry a Steam store url
 		const url = stripQuotes(ctx.frontmatter['url']);
 		const urlMatch = /store\.steampowered\.com\/app\/(\d+)/.exec(url);
-		if (urlMatch) return { steam_appid: urlMatch[1] };
+		if (urlMatch) return { patches: { steam_appid: urlMatch[1] } };
 
 		const query = stripQuotes(ctx.frontmatter['title']) || ctx.filename.replace(/\.md$/, '');
 		if (!query) return null;
 
+		let steamCandidates: ResolveCandidate[] = [];
 		try {
 			const items = await fetchSteamSearch(query, deps);
 			const pick = pickUniqueExact(items, query, (it: any) => String(it.name ?? ''));
-			if (pick) return { steam_appid: String(pick.id) };
+			if (pick) return { patches: { steam_appid: String(pick.id) } };
 			if (items.length > 0) {
 				deps.log(`ambiguous "${query}": candidates: ${items.slice(0, 3).map((it: any) => candidateSummary('appid', it.id, it.name ?? '')).join('; ')}`);
+				steamCandidates = items
+					.slice(0, 6)
+					.filter((it: any) => it.id != null)
+					.map((it: any) => ({ label: steamCandidateLabel(it), patches: { steam_appid: String(it.id) } }));
 			}
 		} catch (e) {
 			deps.log(`game steam storesearch failed for "${query}": ${String(e)}`);
@@ -228,12 +243,12 @@ export const gameSpec: MediaTypeSpec = {
 		const key = deps.getKey('rawg');
 		if (!key) {
 			deps.log(`game resolve: no RAWG key configured, skipping RAWG fallback for "${query}"`);
-			return null;
+			return steamCandidates.length ? { candidates: steamCandidates } : null;
 		}
 		try {
 			const results = await fetchRawgSearch(query, key, deps);
 			const pick = pickUniqueExact(results, query, (it: any) => String(it.name ?? ''));
-			if (pick) return { rawg_id: String(pick.id) };
+			if (pick) return { patches: { rawg_id: String(pick.id) } };
 			if (results.length > 0) {
 				const year = (it: any) => (typeof it.released === 'string' ? it.released.slice(0, 4) : '');
 				deps.log(`ambiguous "${query}": candidates: ${results.slice(0, 3).map((it: any) => candidateSummary('rawg_id', it.id, it.name ?? '', year(it))).join('; ')}`);
@@ -241,7 +256,7 @@ export const gameSpec: MediaTypeSpec = {
 		} catch (e) {
 			deps.log(`game rawg search failed for "${query}": ${String(e)}`);
 		}
-		return null;
+		return steamCandidates.length ? { candidates: steamCandidates } : null;
 	},
 
 	async sync(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<{ content: string; flipped: boolean } | null> {

@@ -36,6 +36,26 @@ function stringifySimpleYaml(value: unknown): string {
 		.concat('\n');
 }
 
+class MockModal {
+	app: unknown;
+	titleEl: { setText: (text: string) => void } = { setText: (): void => {} };
+	contentEl: { empty: () => void } = { empty: (): void => {} };
+
+	constructor(app: unknown) {
+		this.app = app;
+	}
+
+	setTitle(_title: string): this {
+		return this;
+	}
+
+	open(): void {}
+	close(): void {
+		this.onClose();
+	}
+	onClose(): void {}
+}
+
 mock.module('obsidian', () => ({
 	AbstractInputSuggest: class {},
 	Component: class {
@@ -43,18 +63,12 @@ mock.module('obsidian', () => ({
 		unload(): void {}
 	},
 	DropdownComponent: class {},
+	FuzzySuggestModal: class extends MockModal {
+		setPlaceholder(_text: string): void {}
+	},
 	MarkdownRenderer: { render: async (): Promise<void> => {} },
 	MarkdownView: class {},
-	Modal: class {
-		app: unknown;
-
-		constructor(app: unknown) {
-			this.app = app;
-		}
-
-		open(): void {}
-		close(): void {}
-	},
+	Modal: MockModal,
 	Notice: class {},
 	normalizePath: (path: string): string => path,
 	moment: Object.assign((value?: unknown): unknown => value, { locale: (): void => {} }),

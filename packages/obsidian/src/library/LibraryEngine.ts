@@ -1,4 +1,4 @@
-import type { LibraryNoteCtx, MediaTypeSpec, SpecDeps } from 'packages/obsidian/src/library/types';
+import type { LibraryNoteCtx, MediaTypeSpec, ResolveCandidate, SpecDeps } from 'packages/obsidian/src/library/types';
 import { parseNote, stripQuotes } from 'packages/obsidian/src/watchlist/parse';
 import { patchFrontmatter } from 'packages/obsidian/src/watchlist/patchFrontmatter';
 import { withRateLimitRetry } from 'packages/obsidian/src/watchlist/SyncEngine';
@@ -26,6 +26,8 @@ export interface LibraryReport {
 export interface LibraryResolveReport {
 	resolved: string[];
 	ambiguous: string[];
+	needsChoice: { path: string; filename: string; candidates: ResolveCandidate[] }[];
+	skippedNoResolve: number;
 	errors: { path: string; error: string }[];
 }
 
@@ -89,8 +91,13 @@ export async function libraryFolderSync(spec: MediaTypeSpec, deps: LibraryEngine
 	return report;
 }
 
+/** `no_resolve: true` opts a note out of the entire resolve pass (all specs), same as a manual skip. */
+function hasNoResolveFlag(fm: Record<string, string>): boolean {
+	return stripQuotes(fm['no_resolve']) === 'true';
+}
+
 export async function libraryFolderResolve(spec: MediaTypeSpec, deps: LibraryEngineDeps, opts: { dryRun?: boolean } = {}): Promise<LibraryResolveReport> {
-	const report: LibraryResolveReport = { resolved: [], ambiguous: [], errors: [] };
+	const report: LibraryResolveReport = { resolved: [], ambiguous: [], needsChoice: [], skippedNoResolve: 0, errors: [] };
 	const notes = await deps.listNotes();
 	for (const note of notes) {
 		try {
@@ -98,16 +105,24 @@ export async function libraryFolderResolve(spec: MediaTypeSpec, deps: LibraryEng
 			const { frontmatter, body } = parseNote(content);
 			const filename = filenameOf(note.path);
 			if (isSkippableNote(filename, frontmatter, spec.itemType)) continue;
+			if (hasNoResolveFlag(frontmatter)) {
+				report.skippedNoResolve++;
+				deps.log(`no_resolve flag set, skipping: ${note.path}`);
+				continue;
+			}
 			if (spec.hasId(frontmatter)) continue; // already resolved
 			const ctx: LibraryNoteCtx = { frontmatter, body, filename };
-			const patch = await withRateLimitRetry(() => spec.resolve(ctx, deps.specDeps), deps.sleep);
-			if (!patch) {
+			const outcome = await withRateLimitRetry(() => spec.resolve(ctx, deps.specDeps), deps.sleep);
+			if (!outcome) {
 				report.ambiguous.push(note.path);
 				deps.log(`ambiguous/no match: ${note.path}`);
+			} else if ('candidates' in outcome) {
+				report.needsChoice.push({ path: note.path, filename, candidates: outcome.candidates });
+				deps.log(`needs choice (${outcome.candidates.length} candidates): ${note.path}`);
 			} else {
 				report.resolved.push(note.path);
 				deps.log(`${opts.dryRun ? '[dry] ' : ''}resolved ${note.path}`);
-				if (!opts.dryRun) await deps.writeNote(note.path, patchFrontmatter(content, patch, { defaultType: spec.itemType }));
+				if (!opts.dryRun) await deps.writeNote(note.path, patchFrontmatter(content, outcome.patches, { defaultType: spec.itemType }));
 			}
 			await deps.sleep(spec.throttleMs);
 		} catch (e) {

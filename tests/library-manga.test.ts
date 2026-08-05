@@ -571,14 +571,14 @@ describe('mangaSpec.resolve', () => {
 			http: async () => ({ data: [{ mal_id: 116778, title: 'Chainsaw Man', title_english: 'Chainsaw Man' }] }),
 		});
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
-		expect(result).toEqual({ mal_id: '116778' });
+		expect(result).toEqual({ patches: { mal_id: '116778' } });
 	});
 	test('no exact match, sole result -> accepted', async () => {
 		const deps = makeDeps({
 			http: async () => ({ data: [{ mal_id: 999, title: 'Some Other Title', title_english: '' }] }),
 		});
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
-		expect(result).toEqual({ mal_id: '999' });
+		expect(result).toEqual({ patches: { mal_id: '999' } });
 	});
 	test('ambiguous (multiple results, no exact match) -> null', async () => {
 		const deps = makeDeps({
@@ -633,7 +633,7 @@ describe('mangaSpec.resolve — best-effort MangaDex id resolve (I4)', () => {
 			},
 		});
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
-		expect(result).toEqual({ mal_id: '116778', mangadex_id: 'a1b2c3d4-uuid' });
+		expect(result).toEqual({ patches: { mal_id: '116778', mangadex_id: 'a1b2c3d4-uuid' } });
 	});
 
 	test('mangadex search no exact match, sole result -> accepted (unique-exact fallback rule)', async () => {
@@ -644,7 +644,7 @@ describe('mangaSpec.resolve — best-effort MangaDex id resolve (I4)', () => {
 			},
 		});
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
-		expect(result).toEqual({ mal_id: '116778', mangadex_id: 'uuid-solo' });
+		expect(result).toEqual({ patches: { mal_id: '116778', mangadex_id: 'uuid-solo' } });
 	});
 
 	test('mangadex search ambiguous (multiple results, no exact match) -> mal_id patched only', async () => {
@@ -661,7 +661,7 @@ describe('mangaSpec.resolve — best-effort MangaDex id resolve (I4)', () => {
 			},
 		});
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
-		expect(result).toEqual({ mal_id: '116778' });
+		expect(result).toEqual({ patches: { mal_id: '116778' } });
 	});
 
 	test('mangadex search throws -> log, mal_id patched only (best-effort, no overall failure)', async () => {
@@ -672,7 +672,7 @@ describe('mangaSpec.resolve — best-effort MangaDex id resolve (I4)', () => {
 			},
 		});
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
-		expect(result).toEqual({ mal_id: '116778' });
+		expect(result).toEqual({ patches: { mal_id: '116778' } });
 		expect(deps.logCalls.some(m => m.toLowerCase().includes('mangadex'))).toBe(true);
 	});
 
@@ -685,7 +685,7 @@ describe('mangaSpec.resolve — best-effort MangaDex id resolve (I4)', () => {
 			},
 		});
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man', mangadex_id: 'existing-uuid' }, ''), deps);
-		expect(result).toEqual({ mal_id: '116778' });
+		expect(result).toEqual({ patches: { mal_id: '116778' } });
 		expect(mangadexCalled).toBe(false);
 	});
 });
@@ -817,7 +817,7 @@ describe('mangaSpec.resolve — AniList primary', () => {
 			httpPostJson: async () => anilistPage([{ id: 105778, idMal: 116778, title: { romaji: 'Chainsaw Man', english: 'Chainsaw Man' } }]),
 		});
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
-		expect(result).toEqual({ mal_id: '116778', anilist_id: '105778' });
+		expect(result).toEqual({ patches: { mal_id: '116778', anilist_id: '105778' } });
 	});
 
 	test('unique exact match via english title only (case-insensitive) -> accepted', async () => {
@@ -826,7 +826,7 @@ describe('mangaSpec.resolve — AniList primary', () => {
 			httpPostJson: async () => anilistPage([{ id: 105778, idMal: 116778, title: { romaji: 'チェンソーマン', english: 'Chainsaw Man' } }]),
 		});
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
-		expect(result).toEqual({ mal_id: '116778', anilist_id: '105778' });
+		expect(result).toEqual({ patches: { mal_id: '116778', anilist_id: '105778' } });
 	});
 
 	test('no exact match, sole AniList result -> accepted (unique-exact fallback rule)', async () => {
@@ -835,7 +835,7 @@ describe('mangaSpec.resolve — AniList primary', () => {
 			httpPostJson: async () => anilistPage([{ id: 999, idMal: 888, title: { romaji: 'Some Other Title', english: '' } }]),
 		});
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
-		expect(result).toEqual({ mal_id: '888', anilist_id: '999' });
+		expect(result).toEqual({ patches: { mal_id: '888', anilist_id: '999' } });
 	});
 
 	test('AniList hit, idMal null (no MAL bridge) -> patch has anilist_id only', async () => {
@@ -844,7 +844,7 @@ describe('mangaSpec.resolve — AniList primary', () => {
 			httpPostJson: async () => anilistPage([{ id: 105778, idMal: null, title: { romaji: 'Chainsaw Man', english: 'Chainsaw Man' } }]),
 		});
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
-		expect(result).toEqual({ anilist_id: '105778' });
+		expect(result).toEqual({ patches: { anilist_id: '105778' } });
 	});
 
 	test('AniList ambiguous (multiple, no exact) -> falls back to Jikan search, logs anilist candidates', async () => {
@@ -857,8 +857,26 @@ describe('mangaSpec.resolve — AniList primary', () => {
 				]),
 		});
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
-		expect(result).toEqual({ mal_id: '116778' });
+		expect(result).toEqual({ patches: { mal_id: '116778' } });
 		expect(deps.logCalls.some(m => m.includes('ambiguous') && m.includes('anilist_id=1') && m.includes('Foo') && m.includes('anilist_id=2') && m.includes('Bar'))).toBe(true);
+	});
+
+	test('AniList ambiguous AND Jikan also fails to land a unique match -> AniList candidates returned (top 6, label + full patches)', async () => {
+		const deps = makeDeps({
+			http: async () => ({ data: [] }), // jikan: no results either -> resolveMalId returns null
+			httpPostJson: async () =>
+				anilistPage([
+					{ id: 1, idMal: 11, title: { romaji: 'Foo', english: '' }, startDate: { year: 2020 } },
+					{ id: 2, idMal: 22, title: { romaji: 'Bar', english: '' }, startDate: { year: 2021 } },
+				]),
+		});
+		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
+		expect(result).toEqual({
+			candidates: [
+				{ label: 'Foo (2020)', patches: { anilist_id: '1', mal_id: '11' } },
+				{ label: 'Bar (2021)', patches: { anilist_id: '2', mal_id: '22' } },
+			],
+		});
 	});
 
 	test('AniList miss (empty results) -> falls straight to Jikan, no ambiguous log from AniList side', async () => {
@@ -867,7 +885,7 @@ describe('mangaSpec.resolve — AniList primary', () => {
 			httpPostJson: async () => anilistPage([]),
 		});
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
-		expect(result).toEqual({ mal_id: '116778' });
+		expect(result).toEqual({ patches: { mal_id: '116778' } });
 		expect(deps.logCalls.some(m => m.includes('anilist_id='))).toBe(false);
 	});
 
@@ -879,7 +897,7 @@ describe('mangaSpec.resolve — AniList primary', () => {
 			},
 		});
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
-		expect(result).toEqual({ mal_id: '116778' });
+		expect(result).toEqual({ patches: { mal_id: '116778' } });
 		expect(deps.logCalls.some(m => m.toLowerCase().includes('anilist'))).toBe(true);
 	});
 
@@ -904,7 +922,7 @@ describe('mangaSpec.resolve — AniList primary', () => {
 			httpPostJson: async () => anilistPage([{ id: 105778, idMal: 116778, title: { romaji: 'Chainsaw Man', english: 'Chainsaw Man' } }]),
 		});
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
-		expect(result).toEqual({ mal_id: '116778', anilist_id: '105778', mangadex_id: 'a1b2c3d4-uuid' });
+		expect(result).toEqual({ patches: { mal_id: '116778', anilist_id: '105778', mangadex_id: 'a1b2c3d4-uuid' } });
 	});
 
 	test('mangadex_id already present -> mangadex search skipped, even on an AniList hit', async () => {
@@ -917,7 +935,7 @@ describe('mangaSpec.resolve — AniList primary', () => {
 			httpPostJson: async () => anilistPage([{ id: 105778, idMal: 116778, title: { romaji: 'Chainsaw Man', english: 'Chainsaw Man' } }]),
 		});
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man', mangadex_id: 'existing-uuid' }, ''), deps);
-		expect(result).toEqual({ mal_id: '116778', anilist_id: '105778' });
+		expect(result).toEqual({ patches: { mal_id: '116778', anilist_id: '105778' } });
 		expect(mangadexCalled).toBe(false);
 	});
 

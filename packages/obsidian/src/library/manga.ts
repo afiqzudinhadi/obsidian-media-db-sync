@@ -1,4 +1,4 @@
-import type { LibraryNoteCtx, MediaTypeSpec, SpecDeps } from 'packages/obsidian/src/library/types';
+import type { LibraryNoteCtx, MediaTypeSpec, ResolveCandidate, ResolveOutcome, SpecDeps } from 'packages/obsidian/src/library/types';
 import { parseFeed, latestChapter } from 'packages/obsidian/src/library/rss';
 import { stripQuotes, extractMyNotes, extractCustomSections, type CustomSection } from 'packages/obsidian/src/watchlist/parse';
 import { yamlList, yamlScalar, quotedOrNull } from 'packages/obsidian/src/watchlist/yaml';
@@ -256,6 +256,13 @@ function candidateAniListSummary(m: any): string {
 	return `anilist_id=${m?.id ?? ''} «${m?.title?.romaji ?? ''}»${year ? ` (${year})` : ''}`;
 }
 
+/** Human-readable picker label (AniList side) -- same title/year info as candidateAniListSummary, minus the id prefix. */
+function candidateAniListLabel(m: any): string {
+	const title = m?.title?.romaji || m?.title?.english || '';
+	const year = m?.startDate?.year ? String(m.startDate.year) : '';
+	return year ? `${title} (${year})` : title;
+}
+
 export function renderManga(r: MangaRecord, myNotes: string, customSections: CustomSection[] = []): string {
 	const fm = [
 		'---',
@@ -421,10 +428,14 @@ export const mangaSpec: MediaTypeSpec = {
 	// AniList-primary: search AniList first (Page search, unique-exact vs romaji+english). A
 	// unique hit patches anilist_id (+ mal_id via idMal, when AniList has a MAL bridge for it).
 	// AniList miss/ambiguous/throw all fall back to the existing Jikan title-search resolve.
+	// When BOTH AniList and Jikan fail to land a unique match, an AniList-ambiguous result set
+	// (2+ exacts, or 0-exact-multi) is offered back to the caller as candidates for the user to
+	// pick from, instead of a bare null -- Jikan-only ambiguity (AniList had 0/1 results) still
+	// returns null unchanged, since AniList carries the richer id bridge worth surfacing.
 	// TmdbRateLimitError is never treated as a fallback trigger -- it propagates so the engine's
 	// withRateLimitRetry wrapper (around the whole resolve() call) retries instead of masking a
 	// transient 429 as an AniList miss.
-	async resolve(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<Record<string, string> | null> {
+	async resolve(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<ResolveOutcome | null> {
 		const query = stripQuotes(ctx.frontmatter['title']) || ctx.filename.replace(/\.md$/, '');
 		if (!query) return null;
 
@@ -448,11 +459,17 @@ export const mangaSpec: MediaTypeSpec = {
 				const mangadexId = await resolveMangadexId(query, deps);
 				if (mangadexId) patch.mangadex_id = mangadexId;
 			}
-			return patch;
+			return { patches: patch };
 		}
 
+		let anilistCandidates: ResolveCandidate[] = [];
 		if (anilistResults.length > 1) {
 			deps.log(`ambiguous "${query}": candidates: ${anilistResults.slice(0, 3).map(candidateAniListSummary).join('; ')}`);
+			anilistCandidates = anilistResults.slice(0, 6).map(m => {
+				const patch: Record<string, string> = { anilist_id: String(m.id) };
+				if (m.idMal != null) patch.mal_id = String(m.idMal);
+				return { label: candidateAniListLabel(m), patches: patch };
+			});
 		}
 
 		// Jikan fallback (unchanged behavior)
@@ -462,9 +479,9 @@ export const mangaSpec: MediaTypeSpec = {
 		} catch (e) {
 			if (e instanceof TmdbRateLimitError) throw e;
 			deps.log(`manga resolve failed for "${query}": ${String(e)}`);
-			return null;
+			return anilistCandidates.length ? { candidates: anilistCandidates } : null;
 		}
-		if (!malId) return null;
+		if (!malId) return anilistCandidates.length ? { candidates: anilistCandidates } : null;
 
 		const patch: Record<string, string> = { mal_id: malId };
 		// best-effort: only attempt when the note doesn't already carry a mangadex_id
@@ -472,7 +489,7 @@ export const mangaSpec: MediaTypeSpec = {
 			const mangadexId = await resolveMangadexId(query, deps);
 			if (mangadexId) patch.mangadex_id = mangadexId;
 		}
-		return patch;
+		return { patches: patch };
 	},
 
 	// AniList-primary: anilist_id present -> fetch by id; else mal_id -> fetch by idMal bridge.

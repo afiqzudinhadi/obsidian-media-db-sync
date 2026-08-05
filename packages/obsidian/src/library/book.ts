@@ -1,4 +1,4 @@
-import type { LibraryNoteCtx, MediaTypeSpec, SpecDeps } from 'packages/obsidian/src/library/types';
+import type { LibraryNoteCtx, MediaTypeSpec, ResolveOutcome, SpecDeps } from 'packages/obsidian/src/library/types';
 import { stripQuotes, extractMyNotes, extractCustomSections, type CustomSection } from 'packages/obsidian/src/watchlist/parse';
 import { yamlList, yamlScalar, quotedOrNull } from 'packages/obsidian/src/watchlist/yaml';
 import { deriveReadStatus, deriveRating } from 'packages/obsidian/src/library/convert';
@@ -134,6 +134,14 @@ function candidateSummary(d: any): string {
 	return `olid=${olid} «${d.title ?? ''}»${year ? ` (${year})` : ''}${author ? ` ${author}` : ''}`;
 }
 
+/** Human-readable picker label -- same title/year/author info as candidateSummary, minus the olid prefix. */
+function candidateLabel(d: any): string {
+	const year = d.first_publish_year != null ? String(d.first_publish_year) : '';
+	const author = Array.isArray(d.author_name) ? d.author_name.filter(Boolean).join(', ') : '';
+	const meta = [author, year].filter(Boolean).join(', ');
+	return meta ? `${d.title ?? ''} (${meta})` : (d.title ?? '');
+}
+
 export const bookSpec: MediaTypeSpec = {
 	typeName: 'book',
 	itemType: 'book_item',
@@ -154,7 +162,7 @@ export const bookSpec: MediaTypeSpec = {
 		return !stripQuotes(fm['olid']) || !stripQuotes(fm['read_status']);
 	},
 
-	async resolve(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<Record<string, string> | null> {
+	async resolve(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<ResolveOutcome | null> {
 		const title = stripQuotes(ctx.frontmatter['title']) || ctx.filename.replace(/\.md$/, '');
 		if (!title) return null;
 		const hint = authorHint(ctx.frontmatter);
@@ -167,10 +175,14 @@ export const bookSpec: MediaTypeSpec = {
 			const pick = exacts.length === 1 ? exacts[0] : exacts.length === 0 && docs.length === 1 ? docs[0] : null;
 			if (!pick) {
 				deps.log(`ambiguous "${searchQuery}": candidates: ${docs.slice(0, 3).map(candidateSummary).join('; ')}`);
-				return null;
+				const candidates = docs
+					.slice(0, 6)
+					.map(d => ({ label: candidateLabel(d), patches: { olid: String(d.key ?? '').replace(/^\/works\//, '') } }))
+					.filter(c => c.patches.olid);
+				return candidates.length ? { candidates } : null;
 			}
 			const olid = String(pick.key ?? '').replace(/^\/works\//, '');
-			return olid ? { olid } : null;
+			return olid ? { patches: { olid } } : null;
 		} catch (e) {
 			deps.log(`book resolve failed for "${searchQuery}": ${String(e)}`);
 			return null;

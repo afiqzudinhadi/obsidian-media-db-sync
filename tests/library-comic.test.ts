@@ -266,7 +266,7 @@ describe('comicSpec.resolve', () => {
 			getKey: () => 'cvkey',
 		});
 		const result = await comicSpec.resolve(ctxFor({ title: 'Absolute Batman' }), deps);
-		expect(result).toEqual({ comicvine_id: '195824' });
+		expect(result).toEqual({ patches: { comicvine_id: '195824' } });
 	});
 
 	test('no exact match, sole result -> accepted', async () => {
@@ -275,10 +275,10 @@ describe('comicSpec.resolve', () => {
 			getKey: () => 'cvkey',
 		});
 		const result = await comicSpec.resolve(ctxFor({ title: 'Absolute Batman' }), deps);
-		expect(result).toEqual({ comicvine_id: '999' });
+		expect(result).toEqual({ patches: { comicvine_id: '999' } });
 	});
 
-	test('ambiguous (multiple results, no exact match) -> null', async () => {
+	test('ambiguous (multiple results, no exact match) -> candidates (top ≤6, label + full patches)', async () => {
 		const deps = makeDeps({
 			http: async () => ({
 				results: [
@@ -289,7 +289,12 @@ describe('comicSpec.resolve', () => {
 			getKey: () => 'cvkey',
 		});
 		const result = await comicSpec.resolve(ctxFor({ title: 'Absolute Batman' }), deps);
-		expect(result).toBeNull();
+		expect(result).toEqual({
+			candidates: [
+				{ label: 'Batman', patches: { comicvine_id: '1' } },
+				{ label: 'Batman Beyond', patches: { comicvine_id: '2' } },
+			],
+		});
 	});
 	test('ambiguous -> logs top candidates with id + name', async () => {
 		const deps = makeDeps({
@@ -302,7 +307,7 @@ describe('comicSpec.resolve', () => {
 			getKey: () => 'cvkey',
 		});
 		const result = await comicSpec.resolve(ctxFor({ title: 'Absolute Batman' }), deps);
-		expect(result).toBeNull();
+		expect(result && 'candidates' in result).toBe(true);
 		expect(deps.logCalls.some(m => m.includes('ambiguous') && m.includes('id=1') && m.includes('Batman') && m.includes('id=2') && m.includes('Batman Beyond'))).toBe(true);
 	});
 

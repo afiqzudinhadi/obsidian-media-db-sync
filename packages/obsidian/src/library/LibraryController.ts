@@ -1,12 +1,14 @@
 import { Notice, TFile, TFolder } from 'obsidian';
 import { bookSpec } from 'packages/obsidian/src/library/book';
+import { CandidatePickerModal } from 'packages/obsidian/src/library/CandidatePickerModal';
 import { comicSpec } from 'packages/obsidian/src/library/comic';
 import { gameSpec } from 'packages/obsidian/src/library/game';
 import { libraryFolderResolve, libraryFolderSync, type LibraryEngineDeps, type LibraryReport, type LibraryResolveReport } from 'packages/obsidian/src/library/LibraryEngine';
 import { mangaSpec } from 'packages/obsidian/src/library/manga';
-import type { HttpJsonFn, HttpPostJsonFn, HttpTextFn, MediaTypeSpec, SpecDeps } from 'packages/obsidian/src/library/types';
+import type { HttpJsonFn, HttpPostJsonFn, HttpTextFn, MediaTypeSpec, ResolveCandidate, SpecDeps } from 'packages/obsidian/src/library/types';
 import type MediaDbPlugin from 'packages/obsidian/src/main';
 import { obsidianFetch } from 'packages/obsidian/src/utils/Utils';
+import { patchFrontmatter } from 'packages/obsidian/src/watchlist/patchFrontmatter';
 import { TmdbRateLimitError } from 'packages/obsidian/src/watchlist/SyncEngine';
 import { shouldNotifySync } from 'packages/obsidian/src/watchlist/WatchlistController';
 
@@ -34,7 +36,7 @@ function emptyReport(): LibraryReport {
 }
 
 function emptyResolveReport(): LibraryResolveReport {
-	return { resolved: [], ambiguous: [], errors: [] };
+	return { resolved: [], ambiguous: [], needsChoice: [], skippedNoResolve: 0, errors: [] };
 }
 
 export class LibraryController {
@@ -205,6 +207,12 @@ export class LibraryController {
 		}
 	}
 
+	/** Opens the real candidate picker modal; tests override this method directly to avoid needing a real Obsidian modal. */
+	private async pickCandidate(filename: string, candidates: ResolveCandidate[]): Promise<number | null> {
+		const modal = new CandidatePickerModal(this.plugin.app, filename, candidates);
+		return await modal.pick();
+	}
+
 	async resolveType(spec: MediaTypeSpec, dryRun = false): Promise<LibraryResolveReport> {
 		if (this.syncing) {
 			this.notify('Library sync already running');
@@ -214,12 +222,29 @@ export class LibraryController {
 		try {
 			const deps = this.makeDeps(spec, dryRun);
 			const report = await libraryFolderResolve(spec, deps, { dryRun });
+
+			let picked = 0;
+			let skipped = 0;
+			if (!dryRun) {
+				for (const entry of report.needsChoice) {
+					const idx = await this.pickCandidate(entry.filename, entry.candidates);
+					const candidate = idx != null ? entry.candidates[idx] : undefined;
+					if (!candidate) {
+						skipped++;
+						continue;
+					}
+					const content = await deps.readNote(entry.path);
+					await deps.writeNote(entry.path, patchFrontmatter(content, candidate.patches, { defaultType: spec.itemType }));
+					report.resolved.push(entry.path);
+					picked++;
+				}
+			}
+
 			const mode = dryRun ? 'DRY-RUN ' : '';
-			this.notify(
-				`Library ${mode}resolve (${spec.typeName}): ${report.resolved.length} resolved, ${report.ambiguous.length} ambiguous/no match` +
-					(report.errors.length ? `, ${report.errors.length} errors (see console)` : ''),
-				0,
-			);
+			let msg = `Library ${mode}resolve (${spec.typeName}): ${report.resolved.length} resolved, ${report.ambiguous.length} ambiguous/no match`;
+			if (report.needsChoice.length) msg += `, ${picked} picked, ${skipped} skipped`;
+			if (report.errors.length) msg += `, ${report.errors.length} errors (see console)`;
+			this.notify(msg, 0);
 			return report;
 		} finally {
 			this.syncing = false;

@@ -297,7 +297,7 @@ describe('gameSpec.resolve', () => {
 			},
 		});
 		const result = await gameSpec.resolve(ctxFor({ url: 'https://store.steampowered.com/app/792100/7_Billion_Humans/', title: '7 Billion Humans' }), deps);
-		expect(result).toEqual({ steam_appid: '792100' });
+		expect(result).toEqual({ patches: { steam_appid: '792100' } });
 		expect(httpCalls).toBe(0);
 	});
 
@@ -306,7 +306,7 @@ describe('gameSpec.resolve', () => {
 			http: async () => ({ items: [{ id: 792100, name: '7 Billion Humans' }] }),
 		});
 		const result = await gameSpec.resolve(ctxFor({ title: '7 Billion Humans' }), deps);
-		expect(result).toEqual({ steam_appid: '792100' });
+		expect(result).toEqual({ patches: { steam_appid: '792100' } });
 	});
 
 	test('no exact match, sole steam result -> accepted', async () => {
@@ -314,10 +314,10 @@ describe('gameSpec.resolve', () => {
 			http: async () => ({ items: [{ id: 999, name: 'Some Other Game' }] }),
 		});
 		const result = await gameSpec.resolve(ctxFor({ title: '7 Billion Humans' }), deps);
-		expect(result).toEqual({ steam_appid: '999' });
+		expect(result).toEqual({ patches: { steam_appid: '999' } });
 	});
 
-	test('steam storesearch ambiguous, no key -> null, logged', async () => {
+	test('steam storesearch ambiguous, no key -> steam candidates returned (top ≤6, label + full patches), RAWG skip still logged', async () => {
 		const deps = makeDeps({
 			http: async () => ({
 				items: [
@@ -327,7 +327,12 @@ describe('gameSpec.resolve', () => {
 			}),
 		});
 		const result = await gameSpec.resolve(ctxFor({ title: '7 Billion Humans' }), deps);
-		expect(result).toBeNull();
+		expect(result).toEqual({
+			candidates: [
+				{ label: 'Foo', patches: { steam_appid: '1' } },
+				{ label: 'Bar', patches: { steam_appid: '2' } },
+			],
+		});
 		expect(deps.logCalls.some(m => m.includes('RAWG'))).toBe(true);
 	});
 	test('steam storesearch ambiguous -> logs top candidates with appid + name', async () => {
@@ -340,7 +345,7 @@ describe('gameSpec.resolve', () => {
 			}),
 		});
 		const result = await gameSpec.resolve(ctxFor({ title: '7 Billion Humans' }), deps);
-		expect(result).toBeNull();
+		expect(result && 'candidates' in result).toBe(true);
 		expect(deps.logCalls.some(m => m.includes('ambiguous') && m.includes('appid=1') && m.includes('Foo') && m.includes('appid=2') && m.includes('Bar'))).toBe(true);
 	});
 
@@ -353,7 +358,7 @@ describe('gameSpec.resolve', () => {
 			getKey: () => 'rawgkey',
 		});
 		const result = await gameSpec.resolve(ctxFor({ title: '7 Billion Humans' }), deps);
-		expect(result).toEqual({ rawg_id: '4200' });
+		expect(result).toEqual({ patches: { rawg_id: '4200' } });
 		expect(deps.logCalls.some(m => m.includes('storesearch'))).toBe(true);
 	});
 
@@ -363,7 +368,7 @@ describe('gameSpec.resolve', () => {
 			getKey: () => 'rawgkey',
 		});
 		const result = await gameSpec.resolve(ctxFor({ title: '7 Billion Humans' }), deps);
-		expect(result).toEqual({ rawg_id: '4200' });
+		expect(result).toEqual({ patches: { rawg_id: '4200' } });
 	});
 
 	test('no steam results, RAWG key missing -> null, logged, no RAWG call attempted', async () => {

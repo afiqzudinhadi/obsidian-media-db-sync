@@ -461,3 +461,114 @@ describe('sync summary transparency', () => {
 		expect(notices[0]).toContain('1 no-data (see console)');
 	});
 });
+
+describe('resolveType: interactive candidate picker (needsChoice)', () => {
+	const CANDIDATES = [
+		{ label: 'Foo', patches: { mal_id: '1' } },
+		{ label: 'Bar', patches: { mal_id: '2' } },
+	];
+
+	const candidateSpec: MediaTypeSpec = {
+		typeName: 'manga',
+		itemType: 'manga_item',
+		folderSettingKey: 'libraryMangaFolder',
+		enabledSettingKey: 'libraryMangaEnabled',
+		throttleMs: 0,
+		hasId: () => false,
+		isActive: () => true,
+		resolve: async () => ({ candidates: CANDIDATES }),
+		sync: async () => null,
+	};
+
+	function makeCandidateDeps(writes: { path: string; content: string }[]): LibraryEngineDeps {
+		return {
+			listNotes: async () => [{ path: 'Mangas/Foo.md' }],
+			readNote: async () => '---\ntype: manga_item\ntitle: Foo\n---\n\nbody\n',
+			writeNote: async (path: string, content: string) => {
+				writes.push({ path, content });
+			},
+			sleep: async () => {},
+			log: () => {},
+			specDeps: fakeSpecDeps(),
+		};
+	}
+
+	test('pickCandidate fake selects index 0 -> patch applied via patchFrontmatter, counted resolved + picked', async () => {
+		const c = new LibraryController(fakePlugin());
+		const notices: string[] = [];
+		(c as any).notify = (msg: string) => notices.push(msg);
+		const writes: { path: string; content: string }[] = [];
+		(c as any).makeDeps = () => makeCandidateDeps(writes);
+		let pickedFilename = '';
+		let pickedCandidates: unknown = undefined;
+		(c as any).pickCandidate = async (filename: string, candidates: unknown) => {
+			pickedFilename = filename;
+			pickedCandidates = candidates;
+			return 0;
+		};
+
+		const report = await c.resolveType(candidateSpec);
+
+		expect(report.needsChoice).toEqual([{ path: 'Mangas/Foo.md', filename: 'Foo.md', candidates: CANDIDATES }]);
+		expect(report.resolved).toEqual(['Mangas/Foo.md']);
+		expect(writes.length).toBe(1);
+		expect(writes[0].path).toBe('Mangas/Foo.md');
+		expect(writes[0].content).toContain('mal_id: 1');
+		expect(pickedFilename).toBe('Foo.md');
+		expect(pickedCandidates).toEqual(CANDIDATES);
+		expect(notices[0]).toContain('1 picked, 0 skipped');
+	});
+
+	test('pickCandidate fake returns null (Skip) -> no write, counted skipped, not resolved', async () => {
+		const c = new LibraryController(fakePlugin());
+		const notices: string[] = [];
+		(c as any).notify = (msg: string) => notices.push(msg);
+		const writes: { path: string; content: string }[] = [];
+		(c as any).makeDeps = () => makeCandidateDeps(writes);
+		(c as any).pickCandidate = async () => null;
+
+		const report = await c.resolveType(candidateSpec);
+
+		expect(report.resolved).toEqual([]);
+		expect(writes.length).toBe(0);
+		expect(notices[0]).toContain('0 picked, 1 skipped');
+	});
+
+	test('dryRun: needsChoice collected but pickCandidate never invoked, no write', async () => {
+		const c = new LibraryController(fakePlugin());
+		const notices: string[] = [];
+		(c as any).notify = (msg: string) => notices.push(msg);
+		const writes: { path: string; content: string }[] = [];
+		(c as any).makeDeps = () => makeCandidateDeps(writes);
+		let pickCalled = false;
+		(c as any).pickCandidate = async () => {
+			pickCalled = true;
+			return 0;
+		};
+
+		const report = await c.resolveType(candidateSpec, true);
+
+		expect(pickCalled).toBe(false);
+		expect(report.needsChoice.length).toBe(1);
+		expect(writes.length).toBe(0);
+		expect(notices[0]).toContain('0 picked, 0 skipped'); // dry-run never picks/skips; needsChoice.length is still visible on the report
+	});
+
+	test('no needsChoice entries -> summary omits the picked/skipped clause entirely', async () => {
+		const c = new LibraryController(fakePlugin());
+		const notices: string[] = [];
+		(c as any).notify = (msg: string) => notices.push(msg);
+		(c as any).makeDeps = () => ({
+			listNotes: async () => [],
+			readNote: async () => '',
+			writeNote: async () => {},
+			sleep: async () => {},
+			log: () => {},
+			specDeps: fakeSpecDeps(),
+		});
+
+		await c.resolveType(mangaSpec);
+
+		expect(notices[0]).not.toContain('picked');
+	});
+});

@@ -8,6 +8,15 @@ export interface LibraryNoteCtx {
 	filename: string;
 }
 
+/** One candidate offered to the user when resolve() can't pick a unique match on its own. */
+export interface ResolveCandidate {
+	label: string; // human-readable (title + year/author/publisher/etc, whatever the spec already logs)
+	patches: Record<string, string>; // full id-field patch for this candidate (e.g. anilist_id + mal_id)
+}
+
+/** resolve() outcome: either a confident unique-match patch, or a shortlist for the user to pick from. */
+export type ResolveOutcome = { patches: Record<string, string> } | { candidates: ResolveCandidate[] };
+
 export interface MediaTypeSpec {
 	typeName: 'manga' | 'book' | 'game' | 'comic';
 	itemType: string; // 'manga_item' etc.
@@ -16,7 +25,7 @@ export interface MediaTypeSpec {
 	throttleMs: number;
 	hasId(fm: Record<string, string>): boolean;
 	isActive(fm: Record<string, string>): boolean;
-	resolve(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<Record<string, string> | null>; // returns fm patches (id fields)
+	resolve(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<ResolveOutcome | null>; // null = no match/error
 	sync(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<{ content: string; flipped: boolean } | null>; // full new note content; null = skip
 }
 

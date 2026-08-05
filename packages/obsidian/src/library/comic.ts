@@ -1,4 +1,4 @@
-import type { LibraryNoteCtx, MediaTypeSpec, SpecDeps } from 'packages/obsidian/src/library/types';
+import type { LibraryNoteCtx, MediaTypeSpec, ResolveOutcome, SpecDeps } from 'packages/obsidian/src/library/types';
 import { stripQuotes, extractMyNotes, extractCustomSections, type CustomSection } from 'packages/obsidian/src/watchlist/parse';
 import { yamlList, yamlScalar, quotedOrNull } from 'packages/obsidian/src/watchlist/yaml';
 import { deriveReadStatus, deriveRating, parseNumOrNull } from 'packages/obsidian/src/library/convert';
@@ -170,6 +170,14 @@ function candidateSummary(r: any): string {
 	return `id=${r.id ?? ''} «${r.name ?? ''}»${year ? ` (${year})` : ''}${publisher ? ` ${publisher}` : ''}`;
 }
 
+/** Human-readable picker label -- same name/year/publisher info as candidateSummary, minus the id prefix. */
+function candidateLabel(r: any): string {
+	const year = r.start_year != null ? String(r.start_year) : '';
+	const publisher = r.publisher?.name ?? '';
+	const meta = [publisher, year].filter(Boolean).join(', ');
+	return meta ? `${r.name ?? ''} (${meta})` : (r.name ?? '');
+}
+
 export const comicSpec: MediaTypeSpec = {
 	typeName: 'comic',
 	itemType: 'comic_item',
@@ -191,7 +199,7 @@ export const comicSpec: MediaTypeSpec = {
 		return false;
 	},
 
-	async resolve(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<Record<string, string> | null> {
+	async resolve(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<ResolveOutcome | null> {
 		const key = deps.getKey('comicvine');
 		if (!key) {
 			deps.log('comic resolve: no Comic Vine key configured, skipping id lookup');
@@ -208,9 +216,13 @@ export const comicSpec: MediaTypeSpec = {
 			const pick = exacts.length === 1 ? exacts[0] : exacts.length === 0 && results.length === 1 ? results[0] : null;
 			if (!pick) {
 				deps.log(`ambiguous "${query}": candidates: ${results.slice(0, 3).map(candidateSummary).join('; ')}`);
-				return null;
+				const candidates = results
+					.slice(0, 6)
+					.filter(r => r.id != null)
+					.map(r => ({ label: candidateLabel(r), patches: { comicvine_id: String(r.id) } }));
+				return candidates.length ? { candidates } : null;
 			}
-			return pick.id != null ? { comicvine_id: String(pick.id) } : null;
+			return pick.id != null ? { patches: { comicvine_id: String(pick.id) } } : null;
 		} catch (e) {
 			deps.log(`comic resolve failed for "${query}": ${String(e)}`);
 			return null;

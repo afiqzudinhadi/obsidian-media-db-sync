@@ -306,7 +306,7 @@ describe('libraryFolderSync: throttle-after-success', () => {
 
 describe('libraryFolderResolve', () => {
 	test('missing id -> spec.resolve patches written via patchFrontmatter', async () => {
-		const { spec } = makeFakeSpec({ resolve: async () => ({ fake_id: '99' }) });
+		const { spec } = makeFakeSpec({ resolve: async () => ({ patches: { fake_id: '99' } }) });
 		const { deps, writes } = makeDeps([{ path: 'A.md', content: NO_ID_NOTE }]);
 		const report = await libraryFolderResolve(spec, deps, {});
 		expect(report.resolved).toEqual(['A.md']);
@@ -326,7 +326,7 @@ describe('libraryFolderResolve', () => {
 	});
 
 	test('hasId already true -> resolve() not called, note excluded from both lists', async () => {
-		const { spec, resolveCalls } = makeFakeSpec({ resolve: async () => ({ fake_id: '99' }) });
+		const { spec, resolveCalls } = makeFakeSpec({ resolve: async () => ({ patches: { fake_id: '99' } }) });
 		const { deps } = makeDeps([{ path: 'A.md', content: ACTIVE_NOTE }]);
 		const report = await libraryFolderResolve(spec, deps, {});
 		expect(resolveCalls.length).toBe(0);
@@ -335,7 +335,7 @@ describe('libraryFolderResolve', () => {
 	});
 
 	test('dryRun: resolved counted but no writeNote call', async () => {
-		const { spec } = makeFakeSpec({ resolve: async () => ({ fake_id: '99' }) });
+		const { spec } = makeFakeSpec({ resolve: async () => ({ patches: { fake_id: '99' } }) });
 		const { deps, writes } = makeDeps([{ path: 'A.md', content: NO_ID_NOTE }]);
 		const report = await libraryFolderResolve(spec, deps, { dryRun: true });
 		expect(report.resolved).toEqual(['A.md']);
@@ -348,7 +348,7 @@ describe('libraryFolderResolve', () => {
 			resolve: async () => {
 				n++;
 				if (n === 1) throw new Error('boom');
-				return { fake_id: '99' };
+				return { patches: { fake_id: '99' } };
 			},
 		});
 		const { deps } = makeDeps([
@@ -362,7 +362,7 @@ describe('libraryFolderResolve', () => {
 	});
 
 	test('`_`-prefixed / non-entry notes excluded from resolve pass', async () => {
-		const { spec, resolveCalls } = makeFakeSpec({ resolve: async () => ({ fake_id: '99' }) });
+		const { spec, resolveCalls } = makeFakeSpec({ resolve: async () => ({ patches: { fake_id: '99' } }) });
 		const note = `---\ntype: folder_index\n---\n\n# Index\n`;
 		const { deps } = makeDeps([{ path: 'Index.md', content: note }]);
 		const report = await libraryFolderResolve(spec, deps, {});
@@ -381,13 +381,62 @@ describe('libraryFolderResolve', () => {
 					e.retryAfterMs = 1200;
 					throw e;
 				}
-				return { fake_id: '99' };
+				return { patches: { fake_id: '99' } };
 			},
 		});
 		const { deps, slept } = makeDeps([{ path: 'A.md', content: NO_ID_NOTE }]);
 		const report = await libraryFolderResolve(spec, deps, {});
 		expect(calls).toBe(2);
 		expect(slept).toContain(1200);
+		expect(report.resolved).toEqual(['A.md']);
+	});
+});
+
+describe('libraryFolderResolve: needsChoice (candidates outcome)', () => {
+	const CANDIDATES = [
+		{ label: 'Foo (2020)', patches: { fake_id: '1' } },
+		{ label: 'Bar (2021)', patches: { fake_id: '2' } },
+	];
+
+	test('spec.resolve returns candidates -> collected into report.needsChoice, no write, not counted resolved/ambiguous', async () => {
+		const { spec } = makeFakeSpec({ resolve: async () => ({ candidates: CANDIDATES }) });
+		const { deps, writes } = makeDeps([{ path: 'A.md', content: NO_ID_NOTE }]);
+		const report = await libraryFolderResolve(spec, deps, {});
+		expect(report.needsChoice).toEqual([{ path: 'A.md', filename: 'A.md', candidates: CANDIDATES }]);
+		expect(report.resolved).toEqual([]);
+		expect(report.ambiguous).toEqual([]);
+		expect(writes.length).toBe(0);
+	});
+
+	test('dryRun -> candidates still collected (collect too, no write either way)', async () => {
+		const { spec } = makeFakeSpec({ resolve: async () => ({ candidates: CANDIDATES }) });
+		const { deps, writes } = makeDeps([{ path: 'A.md', content: NO_ID_NOTE }]);
+		const report = await libraryFolderResolve(spec, deps, { dryRun: true });
+		expect(report.needsChoice.length).toBe(1);
+		expect(writes.length).toBe(0);
+	});
+});
+
+describe('libraryFolderResolve: no_resolve flag', () => {
+	test('no_resolve: true -> note skipped entirely, counted skippedNoResolve, resolve() never called', async () => {
+		const { spec, resolveCalls } = makeFakeSpec({ resolve: async () => ({ patches: { fake_id: '99' } }) });
+		const note = NO_ID_NOTE.replace('fake_id: ', 'fake_id: \nno_resolve: true');
+		const { deps, writes } = makeDeps([{ path: 'A.md', content: note }]);
+		const report = await libraryFolderResolve(spec, deps, {});
+		expect(resolveCalls.length).toBe(0);
+		expect(report.skippedNoResolve).toBe(1);
+		expect(report.resolved).toEqual([]);
+		expect(report.ambiguous).toEqual([]);
+		expect(report.needsChoice).toEqual([]);
+		expect(writes.length).toBe(0);
+	});
+
+	test('no_resolve absent/false -> resolve() runs normally', async () => {
+		const { spec, resolveCalls } = makeFakeSpec({ resolve: async () => ({ patches: { fake_id: '99' } }) });
+		const { deps } = makeDeps([{ path: 'A.md', content: NO_ID_NOTE }]);
+		const report = await libraryFolderResolve(spec, deps, {});
+		expect(resolveCalls.length).toBe(1);
+		expect(report.skippedNoResolve).toBe(0);
 		expect(report.resolved).toEqual(['A.md']);
 	});
 });

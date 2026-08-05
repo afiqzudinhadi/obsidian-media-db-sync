@@ -305,16 +305,16 @@ describe('bookSpec.resolve', () => {
 	test('unique exact title match -> accepted', async () => {
 		const deps = makeDeps({ http: async () => olFixture });
 		const result = await bookSpec.resolve(ctxFor({ title: '1984' }, ''), deps);
-		expect(result).toEqual({ olid: 'OL1168083W' });
+		expect(result).toEqual({ patches: { olid: 'OL1168083W' } });
 	});
 	test('no exact match, sole result -> accepted', async () => {
 		const deps = makeDeps({
 			http: async () => ({ docs: [{ key: '/works/OL999W', title: 'Some Other Title' }] }),
 		});
 		const result = await bookSpec.resolve(ctxFor({ title: '1984' }, ''), deps);
-		expect(result).toEqual({ olid: 'OL999W' });
+		expect(result).toEqual({ patches: { olid: 'OL999W' } });
 	});
-	test('ambiguous (multiple results, no exact match) -> null', async () => {
+	test('ambiguous (multiple results, no exact match) -> candidates (top ≤6, label + full patches)', async () => {
 		const deps = makeDeps({
 			http: async () => ({
 				docs: [
@@ -324,7 +324,12 @@ describe('bookSpec.resolve', () => {
 			}),
 		});
 		const result = await bookSpec.resolve(ctxFor({ title: '1984' }, ''), deps);
-		expect(result).toBeNull();
+		expect(result).toEqual({
+			candidates: [
+				{ label: 'Foo', patches: { olid: 'OL1W' } },
+				{ label: 'Bar', patches: { olid: 'OL2W' } },
+			],
+		});
 	});
 	test('ambiguous -> logs top candidates with olid + title', async () => {
 		const deps = makeDeps({
@@ -336,7 +341,7 @@ describe('bookSpec.resolve', () => {
 			}),
 		});
 		const result = await bookSpec.resolve(ctxFor({ title: '1984' }, ''), deps);
-		expect(result).toBeNull();
+		expect(result && 'candidates' in result).toBe(true);
 		expect(deps.logCalls.some(m => m.includes('ambiguous') && m.includes('olid=OL1W') && m.includes('Foo') && m.includes('olid=OL2W') && m.includes('Bar'))).toBe(true);
 	});
 	test('no results -> null', async () => {
@@ -368,7 +373,7 @@ describe('bookSpec.resolve — author hint (stock `author` / canonical `authors`
 		const result = await bookSpec.resolve(ctxFor({ title: '1984', author: 'George Orwell' }, ''), deps);
 		const q = new URL(capturedUrl).searchParams.get('q');
 		expect(q).toBe('1984 George Orwell');
-		expect(result).toEqual({ olid: 'OL1168083W' });
+		expect(result).toEqual({ patches: { olid: 'OL1168083W' } });
 	});
 
 	test('canonical `authors` bracketed list -> first author used in query', async () => {
@@ -382,7 +387,7 @@ describe('bookSpec.resolve — author hint (stock `author` / canonical `authors`
 		const result = await bookSpec.resolve(ctxFor({ title: '1984', authors: '[George Orwell, Someone Else]' }, ''), deps);
 		const q = new URL(capturedUrl).searchParams.get('q');
 		expect(q).toBe('1984 George Orwell');
-		expect(result).toEqual({ olid: 'OL1168083W' });
+		expect(result).toEqual({ patches: { olid: 'OL1168083W' } });
 	});
 
 	test('no author anywhere in frontmatter -> query is title only (unchanged behavior)', async () => {
@@ -396,6 +401,6 @@ describe('bookSpec.resolve — author hint (stock `author` / canonical `authors`
 		const result = await bookSpec.resolve(ctxFor({ title: '1984' }, ''), deps);
 		const q = new URL(capturedUrl).searchParams.get('q');
 		expect(q).toBe('1984');
-		expect(result).toEqual({ olid: 'OL1168083W' });
+		expect(result).toEqual({ patches: { olid: 'OL1168083W' } });
 	});
 });
