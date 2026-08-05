@@ -326,8 +326,25 @@ describe('bookSpec.resolve', () => {
 		const result = await bookSpec.resolve(ctxFor({ title: '1984' }, ''), deps);
 		expect(result).toEqual({
 			candidates: [
-				{ label: 'Foo', patches: { olid: 'OL1W' } },
-				{ label: 'Bar', patches: { olid: 'OL2W' } },
+				{ label: 'Foo', detail: 'OL1W', patches: { olid: 'OL1W' } },
+				{ label: 'Bar', detail: 'OL2W', patches: { olid: 'OL2W' } },
+			],
+		});
+	});
+	test('ambiguous candidate detail: first author · first-publish year · page count · olid', async () => {
+		const deps = makeDeps({
+			http: async () => ({
+				docs: [
+					{ key: '/works/OL1W', title: 'Foo', author_name: ['Jane Doe', 'John Roe'], first_publish_year: 1990, number_of_pages_median: 250 },
+					{ key: '/works/OL2W', title: 'Bar' }, // sparse -- only olid survives
+				],
+			}),
+		});
+		const result = await bookSpec.resolve(ctxFor({ title: '1984' }, ''), deps);
+		expect(result).toEqual({
+			candidates: [
+				{ label: 'Foo (Jane Doe, John Roe, 1990)', detail: 'Jane Doe · 1990 · 250p · OL1W', patches: { olid: 'OL1W' } },
+				{ label: 'Bar', detail: 'OL2W', patches: { olid: 'OL2W' } },
 			],
 		});
 	});

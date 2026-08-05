@@ -11,6 +11,7 @@ export interface LibraryNoteCtx {
 /** One candidate offered to the user when resolve() can't pick a unique match on its own. */
 export interface ResolveCandidate {
 	label: string; // human-readable (title + year/author/publisher/etc, whatever the spec already logs)
+	detail?: string; // optional second line for the picker (format/status/publisher/id, etc) -- muted, smaller text
 	patches: Record<string, string>; // full id-field patch for this candidate (e.g. anilist_id + mal_id)
 }
 

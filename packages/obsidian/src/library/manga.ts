@@ -16,6 +16,7 @@ const ANILIST_MEDIA_FIELDS = `
 	id
 	idMal
 	title { romaji english }
+	format
 	status
 	chapters
 	volumes
@@ -169,6 +170,15 @@ function stripAniListHtml(html: string | null | undefined): string {
 		.trim();
 }
 
+/** Story-role staff (author-equivalent) off an AniList `Media` payload -- shared by record-building
+ * (`buildMangaFromAniList`) and the ambiguous-resolve picker detail (`candidateAniListDetail`). */
+function aniListStoryAuthors(media: any): string[] {
+	return ((media?.staff?.edges ?? []) as any[])
+		.filter(e => typeof e?.role === 'string' && e.role.includes('Story'))
+		.map(e => e?.node?.name?.full)
+		.filter(Boolean);
+}
+
 /**
  * Pure mapper: AniList `Media` payload (the unwrapped `data.Media` object) + prev frontmatter ->
  * canonical MangaRecord. Mirrors `buildManga`'s user-field preservation contract exactly; only
@@ -192,10 +202,7 @@ export function buildMangaFromAniList(media: any, prev: Record<string, string>):
 	const malId = media.idMal != null ? String(media.idMal) : stripQuotes(prev['mal_id']);
 	const anilistId = media.id != null ? String(media.id) : stripQuotes(prev['anilist_id']);
 
-	const authors: string[] = ((media.staff?.edges ?? []) as any[])
-		.filter(e => typeof e?.role === 'string' && e.role.includes('Story'))
-		.map(e => e?.node?.name?.full)
-		.filter(Boolean);
+	const authors = aniListStoryAuthors(media);
 
 	return {
 		title: romaji,
@@ -261,6 +268,28 @@ function candidateAniListLabel(m: any): string {
 	const title = m?.title?.romaji || m?.title?.english || '';
 	const year = m?.startDate?.year ? String(m.startDate.year) : '';
 	return year ? `${title} (${year})` : title;
+}
+
+/** AniList `format` enum ("ONE_SHOT") -> Title Case ("One Shot"), or '' when absent. */
+function aniListFormatLabel(format: unknown): string {
+	if (typeof format !== 'string' || !format) return '';
+	return format
+		.toLowerCase()
+		.split('_')
+		.filter(Boolean)
+		.map(w => w[0].toUpperCase() + w.slice(1))
+		.join(' ');
+}
+
+/** Picker second line (AniList side): format · status · first-two story authors · anilist:{id} --
+ * whichever pieces the candidate actually has (search results are sparser than a full Media fetch). */
+function candidateAniListDetail(m: any): string | undefined {
+	const format = aniListFormatLabel(m?.format);
+	const status = ANILIST_STATUS_MAP[m?.status as string] ?? '';
+	const authors = aniListStoryAuthors(m).slice(0, 2).join(', ');
+	const id = m?.id != null ? `anilist:${m.id}` : '';
+	const parts = [format, status, authors, id].filter(Boolean);
+	return parts.length ? parts.join(' · ') : undefined;
 }
 
 export function renderManga(r: MangaRecord, myNotes: string, customSections: CustomSection[] = []): string {
@@ -468,7 +497,7 @@ export const mangaSpec: MediaTypeSpec = {
 			anilistCandidates = anilistResults.slice(0, 6).map(m => {
 				const patch: Record<string, string> = { anilist_id: String(m.id) };
 				if (m.idMal != null) patch.mal_id = String(m.idMal);
-				return { label: candidateAniListLabel(m), patches: patch };
+				return { label: candidateAniListLabel(m), detail: candidateAniListDetail(m), patches: patch };
 			});
 		}
 

@@ -873,8 +873,45 @@ describe('mangaSpec.resolve — AniList primary', () => {
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
 		expect(result).toEqual({
 			candidates: [
-				{ label: 'Foo (2020)', patches: { anilist_id: '1', mal_id: '11' } },
-				{ label: 'Bar (2021)', patches: { anilist_id: '2', mal_id: '22' } },
+				{ label: 'Foo (2020)', detail: 'anilist:1', patches: { anilist_id: '1', mal_id: '11' } },
+				{ label: 'Bar (2021)', detail: 'anilist:2', patches: { anilist_id: '2', mal_id: '22' } },
+			],
+		});
+	});
+
+	test('AniList ambiguous candidate detail: format · status · first-two story authors · anilist:{id}', async () => {
+		const deps = makeDeps({
+			http: async () => ({ data: [] }),
+			httpPostJson: async () =>
+				anilistPage([
+					{
+						id: 1,
+						idMal: 11,
+						title: { romaji: 'Foo', english: '' },
+						startDate: { year: 2020 },
+						format: 'ONE_SHOT',
+						status: 'RELEASING',
+						staff: {
+							edges: [
+								{ role: 'Story & Art', node: { name: { full: 'Author One' } } },
+								{ role: 'Story', node: { name: { full: 'Author Two' } } },
+								{ role: 'Story', node: { name: { full: 'Author Three' } } }, // 3rd Story credit -- dropped, detail caps at 2
+								{ role: 'Illustration', node: { name: { full: 'Illustrator Only' } } }, // non-Story role -- excluded
+							],
+						},
+					},
+					{ id: 2, idMal: 22, title: { romaji: 'Bar', english: '' }, startDate: { year: 2021 } }, // sparse -- only id survives
+				]),
+		});
+		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
+		expect(result).toEqual({
+			candidates: [
+				{
+					label: 'Foo (2020)',
+					detail: 'One Shot · Publishing · Author One, Author Two · anilist:1',
+					patches: { anilist_id: '1', mal_id: '11' },
+				},
+				{ label: 'Bar (2021)', detail: 'anilist:2', patches: { anilist_id: '2', mal_id: '22' } },
 			],
 		});
 	});

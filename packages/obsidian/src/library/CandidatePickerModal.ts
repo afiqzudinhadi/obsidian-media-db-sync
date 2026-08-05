@@ -1,12 +1,14 @@
-import type { App } from 'obsidian';
+import type { App, FuzzyMatch } from 'obsidian';
 import { FuzzySuggestModal } from 'obsidian';
 import type { ResolveCandidate } from 'packages/obsidian/src/library/types';
 
 const SKIP_LABEL = 'Skip';
 const NEVER_LABEL = 'Never resolve (mark no_resolve)';
+const DETAIL_CLASS = 'media-db-sync-candidate-detail';
 
 interface PickerItem {
 	label: string;
+	detail?: string; // optional muted second line (format/status/publisher/id, etc); absent for Skip/Never rows
 	index: number | 'never' | null; // null = Skip, 'never' = mark no_resolve
 }
 
@@ -31,11 +33,21 @@ export class CandidatePickerModal extends FuzzySuggestModal<PickerItem> {
 	}
 
 	getItems(): PickerItem[] {
-		return [...this.candidates.map((c, index) => ({ label: c.label, index })), { label: SKIP_LABEL, index: null }, { label: NEVER_LABEL, index: 'never' as const }];
+		return [
+			...this.candidates.map((c, index) => ({ label: c.label, detail: c.detail, index })),
+			{ label: SKIP_LABEL, index: null },
+			{ label: NEVER_LABEL, index: 'never' as const },
+		];
 	}
 
 	getItemText(item: PickerItem): string {
 		return item.label;
+	}
+
+	/** Two-line suggestion row: label, plus a muted detail line when the candidate has one (Skip/Never never do). */
+	renderSuggestion(match: FuzzyMatch<PickerItem>, el: HTMLElement): void {
+		el.createDiv({ text: match.item.label });
+		if (match.item.detail) el.createDiv({ text: match.item.detail, cls: DETAIL_CLASS });
 	}
 
 	onChooseItem(item: PickerItem, _evt: MouseEvent | KeyboardEvent): void {

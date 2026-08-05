@@ -6,8 +6,25 @@ const CANDIDATES = [
 	{ label: 'Bar (2021)', patches: { mal_id: '2' } },
 ];
 
+const CANDIDATES_WITH_DETAIL = [
+	{ label: 'Foo (2020)', detail: 'Manga · Publishing · Author One · anilist:1', patches: { mal_id: '1' } },
+	{ label: 'Bar (2021)', patches: { mal_id: '2' } }, // no detail -- must render as a single-line row
+];
+
 function fakeApp(): any {
 	return {};
+}
+
+/** Minimal Obsidian `HTMLElement.createDiv` stand-in: records every call's options instead of touching a real DOM. */
+function fakeEl(): { calls: unknown[]; createDiv: (o?: unknown) => unknown } {
+	const calls: unknown[] = [];
+	return {
+		calls,
+		createDiv(o?: unknown) {
+			calls.push(o);
+			return fakeEl();
+		},
+	};
 }
 
 describe('CandidatePickerModal', () => {
@@ -25,6 +42,44 @@ describe('CandidatePickerModal', () => {
 	test('getItemText returns the item label', () => {
 		const modal = new CandidatePickerModal(fakeApp(), 'Some Note.md', CANDIDATES);
 		expect(modal.getItemText({ label: 'Foo (2020)', index: 0 })).toBe('Foo (2020)');
+	});
+
+	test('getItems: candidate detail threaded through, Skip/Never rows have no detail', () => {
+		const modal = new CandidatePickerModal(fakeApp(), 'Some Note.md', CANDIDATES_WITH_DETAIL);
+		const items = modal.getItems();
+		expect(items).toEqual([
+			{ label: 'Foo (2020)', detail: 'Manga · Publishing · Author One · anilist:1', index: 0 },
+			{ label: 'Bar (2021)', detail: undefined, index: 1 },
+			{ label: 'Skip', index: null },
+			{ label: 'Never resolve (mark no_resolve)', index: 'never' },
+		]);
+	});
+
+	test('renderSuggestion: candidate with a detail -> label div + muted detail div', () => {
+		const modal = new CandidatePickerModal(fakeApp(), 'Some Note.md', CANDIDATES_WITH_DETAIL);
+		const item = modal.getItems()[0];
+		const el = fakeEl();
+		modal.renderSuggestion({ item, match: { score: 0, matches: [] } } as any, el as unknown as HTMLElement);
+		expect(el.calls).toEqual([{ text: 'Foo (2020)' }, { text: 'Manga · Publishing · Author One · anilist:1', cls: 'media-db-sync-candidate-detail' }]);
+	});
+
+	test('renderSuggestion: candidate with no detail -> label div only', () => {
+		const modal = new CandidatePickerModal(fakeApp(), 'Some Note.md', CANDIDATES_WITH_DETAIL);
+		const item = modal.getItems()[1];
+		const el = fakeEl();
+		modal.renderSuggestion({ item, match: { score: 0, matches: [] } } as any, el as unknown as HTMLElement);
+		expect(el.calls).toEqual([{ text: 'Bar (2021)' }]);
+	});
+
+	test('renderSuggestion: Skip/Never rows -> label div only, no detail row', () => {
+		const modal = new CandidatePickerModal(fakeApp(), 'Some Note.md', CANDIDATES_WITH_DETAIL);
+		const items = modal.getItems();
+		const skipEl = fakeEl();
+		modal.renderSuggestion({ item: items[2], match: { score: 0, matches: [] } } as any, skipEl as unknown as HTMLElement);
+		expect(skipEl.calls).toEqual([{ text: 'Skip' }]);
+		const neverEl = fakeEl();
+		modal.renderSuggestion({ item: items[3], match: { score: 0, matches: [] } } as any, neverEl as unknown as HTMLElement);
+		expect(neverEl.calls).toEqual([{ text: 'Never resolve (mark no_resolve)' }]);
 	});
 
 	test('onChooseItem(candidate) -> pick() resolves to that candidate index', async () => {

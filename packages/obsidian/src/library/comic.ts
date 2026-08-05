@@ -178,6 +178,16 @@ function candidateLabel(r: any): string {
 	return meta ? `${r.name ?? ''} (${meta})` : (r.name ?? '');
 }
 
+/** Picker second line: publisher · issue count · start year · cv:{id} -- whichever pieces the volume search result actually has. */
+function candidateDetail(r: any): string | undefined {
+	const publisher = r.publisher?.name ?? '';
+	const issues = typeof r.count_of_issues === 'number' ? `${r.count_of_issues} issues` : '';
+	const startYear = r.start_year != null ? `start ${r.start_year}` : '';
+	const id = r.id != null ? `cv:${r.id}` : '';
+	const parts = [publisher, issues, startYear, id].filter(Boolean);
+	return parts.length ? parts.join(' · ') : undefined;
+}
+
 export const comicSpec: MediaTypeSpec = {
 	typeName: 'comic',
 	itemType: 'comic_item',
@@ -219,7 +229,7 @@ export const comicSpec: MediaTypeSpec = {
 				const candidates = results
 					.slice(0, 6)
 					.filter(r => r.id != null)
-					.map(r => ({ label: candidateLabel(r), patches: { comicvine_id: String(r.id) } }));
+					.map(r => ({ label: candidateLabel(r), detail: candidateDetail(r), patches: { comicvine_id: String(r.id) } }));
 				return candidates.length ? { candidates } : null;
 			}
 			return pick.id != null ? { patches: { comicvine_id: String(pick.id) } } : null;

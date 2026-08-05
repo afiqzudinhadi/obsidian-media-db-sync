@@ -291,8 +291,27 @@ describe('comicSpec.resolve', () => {
 		const result = await comicSpec.resolve(ctxFor({ title: 'Absolute Batman' }), deps);
 		expect(result).toEqual({
 			candidates: [
-				{ label: 'Batman', patches: { comicvine_id: '1' } },
-				{ label: 'Batman Beyond', patches: { comicvine_id: '2' } },
+				{ label: 'Batman', detail: 'cv:1', patches: { comicvine_id: '1' } },
+				{ label: 'Batman Beyond', detail: 'cv:2', patches: { comicvine_id: '2' } },
+			],
+		});
+	});
+
+	test('ambiguous candidate detail: publisher · issue count · start year · cv:{id}', async () => {
+		const deps = makeDeps({
+			http: async () => ({
+				results: [
+					{ id: 1, name: 'Batman', publisher: { name: 'DC Comics' }, count_of_issues: 85, start_year: 2016 },
+					{ id: 2, name: 'Batman Beyond' }, // sparse -- only cv:id survives
+				],
+			}),
+			getKey: () => 'cvkey',
+		});
+		const result = await comicSpec.resolve(ctxFor({ title: 'Absolute Batman' }), deps);
+		expect(result).toEqual({
+			candidates: [
+				{ label: 'Batman (DC Comics, 2016)', detail: 'DC Comics · 85 issues · start 2016 · cv:1', patches: { comicvine_id: '1' } },
+				{ label: 'Batman Beyond', detail: 'cv:2', patches: { comicvine_id: '2' } },
 			],
 		});
 	});

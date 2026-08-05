@@ -179,6 +179,12 @@ function steamCandidateLabel(it: any): string {
 	return String(it?.name ?? '');
 }
 
+/** Picker second line for a Steam storesearch item -- id is the only reliably-present differentiator
+ * beyond name (the storesearch payload carries no release date, same limitation steamCandidateLabel notes). */
+function steamCandidateDetail(it: any): string {
+	return `Steam appid ${it?.id ?? ''}`;
+}
+
 async function fetchSteamSearch(query: string, deps: SpecDeps): Promise<any[]> {
 	const qs = new URLSearchParams({ term: query, cc: 'us', l: 'en' });
 	const res = await deps.http(`${STEAM_STORE_BASE}/api/storesearch/?${qs.toString()}`, {});
@@ -234,7 +240,7 @@ export const gameSpec: MediaTypeSpec = {
 				steamCandidates = items
 					.slice(0, 6)
 					.filter((it: any) => it.id != null)
-					.map((it: any) => ({ label: steamCandidateLabel(it), patches: { steam_appid: String(it.id) } }));
+					.map((it: any) => ({ label: steamCandidateLabel(it), detail: steamCandidateDetail(it), patches: { steam_appid: String(it.id) } }));
 			}
 		} catch (e) {
 			deps.log(`game steam storesearch failed for "${query}": ${String(e)}`);

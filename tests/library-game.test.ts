@@ -329,8 +329,8 @@ describe('gameSpec.resolve', () => {
 		const result = await gameSpec.resolve(ctxFor({ title: '7 Billion Humans' }), deps);
 		expect(result).toEqual({
 			candidates: [
-				{ label: 'Foo', patches: { steam_appid: '1' } },
-				{ label: 'Bar', patches: { steam_appid: '2' } },
+				{ label: 'Foo', detail: 'Steam appid 1', patches: { steam_appid: '1' } },
+				{ label: 'Bar', detail: 'Steam appid 2', patches: { steam_appid: '2' } },
 			],
 		});
 		expect(deps.logCalls.some(m => m.includes('RAWG'))).toBe(true);

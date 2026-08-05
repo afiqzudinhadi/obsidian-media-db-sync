@@ -142,6 +142,16 @@ function candidateLabel(d: any): string {
 	return meta ? `${d.title ?? ''} (${meta})` : (d.title ?? '');
 }
 
+/** Picker second line: first author · first-publish year · page count · olid -- whichever pieces the doc actually has. */
+function candidateDetail(d: any): string | undefined {
+	const author = Array.isArray(d.author_name) && d.author_name.length ? String(d.author_name[0]) : '';
+	const year = d.first_publish_year != null ? String(d.first_publish_year) : '';
+	const pages = typeof d.number_of_pages_median === 'number' ? `${d.number_of_pages_median}p` : '';
+	const olid = String(d.key ?? '').replace(/^\/works\//, '');
+	const parts = [author, year, pages, olid].filter(Boolean);
+	return parts.length ? parts.join(' · ') : undefined;
+}
+
 export const bookSpec: MediaTypeSpec = {
 	typeName: 'book',
 	itemType: 'book_item',
@@ -177,7 +187,7 @@ export const bookSpec: MediaTypeSpec = {
 				deps.log(`ambiguous "${searchQuery}": candidates: ${docs.slice(0, 3).map(candidateSummary).join('; ')}`);
 				const candidates = docs
 					.slice(0, 6)
-					.map(d => ({ label: candidateLabel(d), patches: { olid: String(d.key ?? '').replace(/^\/works\//, '') } }))
+					.map(d => ({ label: candidateLabel(d), detail: candidateDetail(d), patches: { olid: String(d.key ?? '').replace(/^\/works\//, '') } }))
 					.filter(c => c.patches.olid);
 				return candidates.length ? { candidates } : null;
 			}
