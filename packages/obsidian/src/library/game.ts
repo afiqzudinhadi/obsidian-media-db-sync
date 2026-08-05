@@ -114,6 +114,43 @@ export function buildGame(source: 'steam' | 'rawg', data: any, prev: Record<stri
 	};
 }
 
+/**
+ * Pure mapper: prev frontmatter only (no API payload) -> canonical GameRecord, for id-less
+ * notes that can never be resolved (or haven't been resolved yet) but still need a canonical
+ * `game_item` shape so they aren't permanently invisible to type-filtered Bases queries.
+ * User-managed fields go through the same derive helpers as buildGame; everything API-derived
+ * (developer, publisher, platforms, genre, release date, metacritic, poster, description) is
+ * empty/null. `url` carries forward whatever the note already had (e.g. a Steam store link from
+ * the vault skeleton) untouched -- no synthetic link is built without a resolved id. `title`
+ * falls back to the filename (minus `.md`) when the note has no title field at all.
+ */
+export function buildGameLocal(prev: Record<string, string>, filename: string): GameRecord {
+	const title = stripQuotes(prev['title']) || filename.replace(/\.md$/, '');
+	const { rating, ratingStars } = deriveRating(prev);
+	const playStatus = derivePlayStatus(prev);
+	const steamAppid = stripQuotes(prev['steam_appid']);
+	const rawgId = stripQuotes(prev['rawg_id']);
+	const url = stripQuotes(prev['url']);
+
+	return {
+		title,
+		playStatus,
+		rating,
+		ratingStars,
+		developer: [],
+		publisher: [],
+		platforms: [],
+		genre: [],
+		releaseDate: '',
+		metacritic: null,
+		steamAppid,
+		rawgId,
+		poster: null,
+		url,
+		description: '',
+	};
+}
+
 export function renderGame(r: GameRecord, myNotes: string, customSections: CustomSection[] = []): string {
 	const fm = [
 		'---',
@@ -314,5 +351,10 @@ export const gameSpec: MediaTypeSpec = {
 		}
 
 		return null; // steam_appid set, success:false, no rawg fallback available
+	},
+
+	convertLocal(ctx: LibraryNoteCtx): string {
+		const record = buildGameLocal(ctx.frontmatter, ctx.filename);
+		return renderGame(record, extractMyNotes(ctx.body), extractCustomSections(ctx.body));
 	},
 };

@@ -145,6 +145,52 @@ export function buildManga(jikan: any, prev: Record<string, string>): MangaRecor
 	};
 }
 
+/**
+ * Pure mapper: prev frontmatter only (no API payload) -> canonical MangaRecord, for id-less
+ * notes that can never be resolved (or haven't been resolved yet) but still need a canonical
+ * `manga_item` shape so they aren't permanently invisible to type-filtered Bases queries.
+ * User-managed fields go through the same derive helpers as buildManga/buildMangaFromAniList;
+ * everything API-derived (chapters, volumes, status, authors, genre, score, dates, poster,
+ * synopsis) is empty/null -- there's no source to pull it from. `title` falls back to the
+ * filename (minus `.md`) when the note has no title field at all.
+ */
+export function buildMangaLocal(prev: Record<string, string>, filename: string): MangaRecord {
+	const title = stripQuotes(prev['title']) || filename.replace(/\.md$/, '');
+	const { rating, ratingStars } = deriveRating(prev);
+	const readStatus = deriveReadStatus(prev);
+	const lastReadChapter = stripQuotes(prev['last_read_chapter']);
+	const rss = stripNullSentinel(stripQuotes(prev['rss']));
+	const mangadexId = stripQuotes(prev['mangadex_id']);
+	const malId = stripQuotes(prev['mal_id']);
+	const anilistId = stripQuotes(prev['anilist_id']);
+
+	return {
+		title,
+		engName: '',
+		readStatus,
+		rating,
+		ratingStars,
+		lastReadChapter,
+		latestChapter: parseNumOrNull(prev['latest_chapter']),
+		lastChapterDate: stripNullSentinel(stripQuotes(prev['last_chapter_date'])),
+		chapters: null,
+		volumes: null,
+		status: '',
+		authors: [],
+		genre: [],
+		score: null,
+		publishedFrom: null,
+		publishedTo: null,
+		malId,
+		anilistId,
+		mangadexId,
+		rss,
+		poster: null,
+		url: malId ? `https://myanimelist.net/manga/${malId}` : '',
+		synopsis: '',
+	};
+}
+
 /** AniList `{year,month,day}` date object -> ISO `YYYY-MM-DD`, or null when any part is missing
  * (AniList leaves in-progress end dates as all-null rather than omitting the object). */
 function aniListDate(d: { year?: number | null; month?: number | null; day?: number | null } | null | undefined): string | null {
@@ -591,5 +637,10 @@ export const mangaSpec: MediaTypeSpec = {
 
 		const content = renderManga(record, extractMyNotes(ctx.body), extractCustomSections(ctx.body));
 		return { content, flipped };
+	},
+
+	convertLocal(ctx: LibraryNoteCtx): string {
+		const record = buildMangaLocal(ctx.frontmatter, ctx.filename);
+		return renderManga(record, extractMyNotes(ctx.body), extractCustomSections(ctx.body));
 	},
 };

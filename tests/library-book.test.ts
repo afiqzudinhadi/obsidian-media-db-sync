@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildBook, renderBook, bookSpec, type BookRecord } from 'packages/obsidian/src/library/book';
+import { buildBook, buildBookLocal, renderBook, bookSpec, type BookRecord } from 'packages/obsidian/src/library/book';
 import type { SpecDeps, LibraryNoteCtx } from 'packages/obsidian/src/library/types';
 import olFixture from 'tests/fixtures/openlibrary-search.json';
 
@@ -419,5 +419,92 @@ describe('bookSpec.resolve — author hint (stock `author` / canonical `authors`
 		const q = new URL(capturedUrl).searchParams.get('q');
 		expect(q).toBe('1984');
 		expect(result).toEqual({ patches: { olid: 'OL1168083W' } });
+	});
+});
+
+describe('buildBookLocal: pure prev-only mapper (no API payload)', () => {
+	test('empty prev + filename fallback -> title from filename, everything else empty/null', () => {
+		const r = buildBookLocal({}, 'Nineteen Eighty-Four.md');
+		expect(r.title).toBe('Nineteen Eighty-Four');
+		expect(r.readStatus).toBe('Unread');
+		expect(r.rating).toBe('0');
+		expect(r.ratingStars).toBe('');
+		expect(r.authors).toEqual([]);
+		expect(r.year).toBeNull();
+		expect(r.pages).toBeNull();
+		expect(r.genre).toEqual([]);
+		expect(r.olid).toBe('');
+		expect(r.isbn).toBe('');
+		expect(r.poster).toBeNull();
+		expect(r.url).toBe('');
+	});
+
+	test('prev title wins over filename', () => {
+		expect(buildBookLocal({ title: '1984' }, 'Nineteen Eighty-Four.md').title).toBe('1984');
+	});
+
+	test('skeleton legacy fields (read/personalRating/author) converted via existing derive helpers', () => {
+		const r = buildBookLocal({ read: 'true', personalRating: '4', author: 'George Orwell' }, 'X.md');
+		expect(r.readStatus).toBe('Read');
+		expect(r.rating).toBe('4');
+		expect(r.ratingStars).toBe('⭐️⭐️⭐️⭐️');
+		expect(r.authors).toEqual(['George Orwell']);
+	});
+
+	test('carries whatever olid/isbn prev already has', () => {
+		const r = buildBookLocal({ olid: 'OL1168083W', isbn: '9780451524935' }, 'X.md');
+		expect(r.olid).toBe('OL1168083W');
+		expect(r.isbn).toBe('9780451524935');
+		expect(r.url).toBe('https://openlibrary.org/works/OL1168083W');
+	});
+});
+
+describe('bookSpec.convertLocal: no-network canonical conversion for id-less notes', () => {
+	test('stock-skeleton note -> canonical book_item shape, title falls back to filename', () => {
+		const fm = { type: 'book', read: 'true', personalRating: '3', author: 'George Orwell' };
+		const ctx: LibraryNoteCtx = { frontmatter: fm, body: '## My Notes\n\nsome notes', filename: '1984.md' };
+		const content = bookSpec.convertLocal(ctx);
+		expect(content).toContain('type: book_item');
+		expect(content).toContain('title: 1984');
+		expect(content).toContain('read_status: Read');
+		expect(content).toContain('rating: 3');
+		expect(content).toContain('## My Notes');
+		expect(content).toContain('some notes');
+	});
+
+	test('legacy plain `url` field carried forward as a Goodreads Links entry', () => {
+		const fm = { type: 'book', url: 'https://www.goodreads.com/book/show/5470.1984' };
+		const ctx: LibraryNoteCtx = { frontmatter: fm, body: '## My Notes\n\n', filename: '1984.md' };
+		const content = bookSpec.convertLocal(ctx);
+		expect(content).toContain('[Goodreads](https://www.goodreads.com/book/show/5470.1984)');
+	});
+
+	test('preserves custom sections through conversion', () => {
+		const ctx: LibraryNoteCtx = {
+			frontmatter: {},
+			body: '## Quotes\n\nsome quote\n\n## My Notes\n\nkeep me',
+			filename: 'X.md',
+		};
+		const content = bookSpec.convertLocal(ctx);
+		expect(content).toContain('## Quotes');
+		expect(content).toContain('some quote');
+		expect(content).toContain('keep me');
+	});
+
+	test('round-trip idempotence: re-running convertLocal on its own output yields byte-identical content', () => {
+		const fm = { type: 'book', read: 'false', personalRating: '', url: 'https://www.goodreads.com/book/show/5470.1984' };
+		const ctx: LibraryNoteCtx = { frontmatter: fm, body: '## My Notes\n\n', filename: '1984.md' };
+		const once = bookSpec.convertLocal(ctx);
+		const { frontmatter: fm2, body: body2 } = (() => {
+			const m = /^---\n([\s\S]*?)\n---([\s\S]*)$/.exec(once)!;
+			const f: Record<string, string> = {};
+			for (const line of m[1].split('\n')) {
+				const mm = /^([A-Za-z0-9_]+):\s*(.*)$/.exec(line);
+				if (mm) f[mm[1]] = mm[2].trim();
+			}
+			return { frontmatter: f, body: m[2] };
+		})();
+		const twice = bookSpec.convertLocal({ frontmatter: fm2, body: body2, filename: '1984.md' });
+		expect(twice).toBe(once);
 	});
 });

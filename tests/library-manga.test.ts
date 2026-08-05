@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildManga, buildMangaFromAniList, renderManga, mangaSpec, type MangaRecord } from 'packages/obsidian/src/library/manga';
+import { buildManga, buildMangaFromAniList, buildMangaLocal, renderManga, mangaSpec, type MangaRecord } from 'packages/obsidian/src/library/manga';
 import type { SpecDeps, LibraryNoteCtx } from 'packages/obsidian/src/library/types';
 import { TmdbRateLimitError } from 'packages/obsidian/src/watchlist/SyncEngine';
 import jikanFixture from 'tests/fixtures/jikan-manga-csm.json';
@@ -1087,5 +1087,105 @@ describe('mangaSpec.sync — AniList primary enrich', () => {
 		expect(result!.content).toContain('latest_chapter: 214');
 		expect(result!.content).toContain('read_status: Unread');
 		expect(deps.notifyCalls).toEqual(['«Chainsaw Man» ch. 214 out']);
+	});
+});
+
+describe('buildMangaLocal: pure prev-only mapper (no API payload)', () => {
+	test('empty prev + filename fallback -> title from filename, everything else empty/null', () => {
+		const r = buildMangaLocal({}, 'Berserk.md');
+		expect(r.title).toBe('Berserk');
+		expect(r.readStatus).toBe('Unread');
+		expect(r.rating).toBe('0');
+		expect(r.ratingStars).toBe('');
+		expect(r.chapters).toBeNull();
+		expect(r.volumes).toBeNull();
+		expect(r.status).toBe('');
+		expect(r.authors).toEqual([]);
+		expect(r.genre).toEqual([]);
+		expect(r.score).toBeNull();
+		expect(r.publishedFrom).toBeNull();
+		expect(r.publishedTo).toBeNull();
+		expect(r.malId).toBe('');
+		expect(r.anilistId).toBe('');
+		expect(r.mangadexId).toBe('');
+		expect(r.rss).toBe('');
+		expect(r.poster).toBeNull();
+		expect(r.url).toBe('');
+		expect(r.synopsis).toBe('');
+	});
+
+	test('prev title wins over filename', () => {
+		expect(buildMangaLocal({ title: 'Chainsaw Man' }, 'Berserk.md').title).toBe('Chainsaw Man');
+	});
+
+	test('skeleton legacy fields (read/personalRating) converted via existing derive helpers', () => {
+		const r = buildMangaLocal({ read: 'true', personalRating: '4' }, 'X.md');
+		expect(r.readStatus).toBe('Read');
+		expect(r.rating).toBe('4');
+		expect(r.ratingStars).toBe('⭐️⭐️⭐️⭐️');
+	});
+
+	test('carries whatever id/tracking fields prev already has (mal_id, anilist_id, mangadex_id, rss, last_read_chapter, latest_chapter, last_chapter_date)', () => {
+		const prev = {
+			mal_id: '116778',
+			anilist_id: '105778',
+			mangadex_id: 'abc-123',
+			rss: 'https://example.com/feed.xml',
+			last_read_chapter: '150',
+			latest_chapter: '213',
+			last_chapter_date: '2026-07-16',
+		};
+		const r = buildMangaLocal(prev, 'X.md');
+		expect(r.malId).toBe('116778');
+		expect(r.anilistId).toBe('105778');
+		expect(r.mangadexId).toBe('abc-123');
+		expect(r.rss).toBe('https://example.com/feed.xml');
+		expect(r.lastReadChapter).toBe('150');
+		expect(r.latestChapter).toBe(213);
+		expect(r.lastChapterDate).toBe('2026-07-16');
+		expect(r.url).toBe('https://myanimelist.net/manga/116778');
+	});
+});
+
+describe('mangaSpec.convertLocal: no-network canonical conversion for id-less notes', () => {
+	test('stock-skeleton note -> canonical manga_item shape, title falls back to filename', () => {
+		const fm = { type: 'comicManga', read: 'true', personalRating: '3' };
+		const ctx: LibraryNoteCtx = { frontmatter: fm, body: '## My Notes\n\nsome notes', filename: 'Ghostblade.md' };
+		const content = mangaSpec.convertLocal(ctx);
+		expect(content).toContain('type: manga_item');
+		expect(content).toContain('title: Ghostblade');
+		expect(content).toContain('read_status: Read');
+		expect(content).toContain('rating: 3');
+		expect(content).toContain('## My Notes');
+		expect(content).toContain('some notes');
+	});
+
+	test('preserves custom sections through conversion', () => {
+		const ctx: LibraryNoteCtx = {
+			frontmatter: {},
+			body: '## Watch Order\n\nvol 1 first\n\n## My Notes\n\nkeep me',
+			filename: 'X.md',
+		};
+		const content = mangaSpec.convertLocal(ctx);
+		expect(content).toContain('## Watch Order');
+		expect(content).toContain('vol 1 first');
+		expect(content).toContain('keep me');
+	});
+
+	test('round-trip idempotence: re-running convertLocal on its own output yields byte-identical content', () => {
+		const fm = { type: 'comicManga', read: 'false', personalRating: '' };
+		const ctx: LibraryNoteCtx = { frontmatter: fm, body: '## My Notes\n\n', filename: 'Ghostblade.md' };
+		const once = mangaSpec.convertLocal(ctx);
+		const { frontmatter: fm2, body: body2 } = (() => {
+			const m = /^---\n([\s\S]*?)\n---([\s\S]*)$/.exec(once)!;
+			const f: Record<string, string> = {};
+			for (const line of m[1].split('\n')) {
+				const mm = /^([A-Za-z0-9_]+):\s*(.*)$/.exec(line);
+				if (mm) f[mm[1]] = mm[2].trim();
+			}
+			return { frontmatter: f, body: m[2] };
+		})();
+		const twice = mangaSpec.convertLocal({ frontmatter: fm2, body: body2, filename: 'Ghostblade.md' });
+		expect(twice).toBe(once);
 	});
 });

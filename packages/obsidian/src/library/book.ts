@@ -58,6 +58,40 @@ export function buildBook(doc: any, prev: Record<string, string>): BookRecord {
 	};
 }
 
+/**
+ * Pure mapper: prev frontmatter only (no API payload) -> canonical BookRecord, for id-less
+ * notes that can never be resolved (or haven't been resolved yet) but still need a canonical
+ * `book_item` shape so they aren't permanently invisible to type-filtered Bases queries.
+ * User-managed fields go through the same derive helpers as buildBook (including the legacy
+ * singular `author` skeleton fallback); everything API-derived (year, pages, genre, poster,
+ * Open Library url) is empty/null. `title` falls back to the filename (minus `.md`) when the
+ * note has no title field at all.
+ */
+export function buildBookLocal(prev: Record<string, string>, filename: string): BookRecord {
+	const title = stripQuotes(prev['title']) || filename.replace(/\.md$/, '');
+	const { rating, ratingStars } = deriveRating(prev);
+	const readStatus = deriveReadStatus(prev);
+	// skeleton conversion: legacy singular `author` field -- mirrors deriveAuthors's own fallback
+	const legacyAuthor = stripQuotes(prev['author']);
+	const authors = legacyAuthor ? [legacyAuthor] : [];
+	const olid = stripQuotes(prev['olid']);
+
+	return {
+		title,
+		readStatus,
+		rating,
+		ratingStars,
+		authors,
+		year: null,
+		pages: null,
+		genre: [],
+		olid,
+		isbn: stripQuotes(prev['isbn']),
+		poster: null,
+		url: olid ? `${OPENLIBRARY_BASE}/works/${olid}` : '',
+	};
+}
+
 /** Carries the legacy goodreads search link forward as a `## Links` entry across every re-render. */
 function resolveGoodreadsLink(prev: Record<string, string>, body: string): string {
 	const linksMatch = /##\s*Links\s*\n([\s\S]*?)(?=\n##\s|$)/.exec(body ?? '');
@@ -225,5 +259,11 @@ export const bookSpec: MediaTypeSpec = {
 		const goodreadsUrl = resolveGoodreadsLink(fm, ctx.body);
 		const content = renderBook(record, extractMyNotes(ctx.body), extractCustomSections(ctx.body), goodreadsUrl);
 		return { content, flipped: false }; // static spec -- no automation, never flips
+	},
+
+	convertLocal(ctx: LibraryNoteCtx): string {
+		const record = buildBookLocal(ctx.frontmatter, ctx.filename);
+		const goodreadsUrl = resolveGoodreadsLink(ctx.frontmatter, ctx.body);
+		return renderBook(record, extractMyNotes(ctx.body), extractCustomSections(ctx.body), goodreadsUrl);
 	},
 };

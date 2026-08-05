@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildComic, renderComic, htmlToPlainText, comicSpec, type ComicRecord } from 'packages/obsidian/src/library/comic';
+import { buildComic, buildComicLocal, renderComic, htmlToPlainText, comicSpec, type ComicRecord } from 'packages/obsidian/src/library/comic';
 import type { SpecDeps, LibraryNoteCtx } from 'packages/obsidian/src/library/types';
 import comicvineFixture from 'tests/fixtures/comicvine-volume.json';
 
@@ -543,5 +543,91 @@ describe('comicSpec.sync — seed pass (I3): no stored latest_issue never flips 
 		expect(result!.content).toContain('latest_issue: 11');
 		expect(result!.content).toContain('read_status: Unread');
 		expect(deps.notifyCalls).toEqual(['«Absolute Batman» issue 11 out']);
+	});
+});
+
+describe('buildComicLocal: pure prev-only mapper (no API payload)', () => {
+	test('empty prev + filename fallback -> title from filename, everything else empty/null', () => {
+		const r = buildComicLocal({}, 'Ghostblade.md');
+		expect(r.title).toBe('Ghostblade');
+		expect(r.readStatus).toBe('Unread');
+		expect(r.rating).toBe('0');
+		expect(r.ratingStars).toBe('');
+		expect(r.lastReadIssue).toBe('');
+		expect(r.latestIssue).toBeNull();
+		expect(r.issues).toBeNull();
+		expect(r.status).toBe('Ongoing');
+		expect(r.publisher).toBe('');
+		expect(r.people).toEqual([]);
+		expect(r.startYear).toBe('');
+		expect(r.comicvineId).toBe('');
+		expect(r.poster).toBeNull();
+		expect(r.url).toBe('');
+		expect(r.description).toBe('');
+	});
+
+	test('prev title wins over filename', () => {
+		expect(buildComicLocal({ title: 'Ghostblade' }, 'X.md').title).toBe('Ghostblade');
+	});
+
+	test('skeleton legacy fields (read/personalRating) converted via existing derive helpers', () => {
+		const r = buildComicLocal({ read: 'true', personalRating: '5' }, 'X.md');
+		expect(r.readStatus).toBe('Read');
+		expect(r.rating).toBe('5');
+		expect(r.ratingStars).toBe('⭐️⭐️⭐️⭐️⭐️');
+	});
+
+	test('existing status carried forward, not overwritten to the Ongoing default', () => {
+		expect(buildComicLocal({ status: 'Finished' }, 'X.md').status).toBe('Finished');
+	});
+
+	test('carries whatever comicvine_id/last_read_issue/latest_issue prev already has', () => {
+		const r = buildComicLocal({ comicvine_id: '195824', last_read_issue: '5', latest_issue: '10' }, 'X.md');
+		expect(r.comicvineId).toBe('195824');
+		expect(r.lastReadIssue).toBe('5');
+		expect(r.latestIssue).toBe(10);
+	});
+});
+
+describe('comicSpec.convertLocal: no-network canonical conversion for id-less notes', () => {
+	test('stock-skeleton note -> canonical comic_item shape, title falls back to filename', () => {
+		const fm = { type: 'comicManga', read: 'true', personalRating: '3' };
+		const ctx: LibraryNoteCtx = { frontmatter: fm, body: '## My Notes\n\nsome notes', filename: 'Ghostblade.md' };
+		const content = comicSpec.convertLocal(ctx);
+		expect(content).toContain('type: comic_item');
+		expect(content).toContain('title: Ghostblade');
+		expect(content).toContain('read_status: Read');
+		expect(content).toContain('rating: 3');
+		expect(content).toContain('## My Notes');
+		expect(content).toContain('some notes');
+	});
+
+	test('preserves custom sections through conversion', () => {
+		const ctx: LibraryNoteCtx = {
+			frontmatter: {},
+			body: '## Story Arcs\n\narc 1\n\n## My Notes\n\nkeep me',
+			filename: 'X.md',
+		};
+		const content = comicSpec.convertLocal(ctx);
+		expect(content).toContain('## Story Arcs');
+		expect(content).toContain('arc 1');
+		expect(content).toContain('keep me');
+	});
+
+	test('round-trip idempotence: re-running convertLocal on its own output yields byte-identical content', () => {
+		const fm = { type: 'comicManga', read: 'false', personalRating: '' };
+		const ctx: LibraryNoteCtx = { frontmatter: fm, body: '## My Notes\n\n', filename: 'Ghostblade.md' };
+		const once = comicSpec.convertLocal(ctx);
+		const { frontmatter: fm2, body: body2 } = (() => {
+			const m = /^---\n([\s\S]*?)\n---([\s\S]*)$/.exec(once)!;
+			const f: Record<string, string> = {};
+			for (const line of m[1].split('\n')) {
+				const mm = /^([A-Za-z0-9_]+):\s*(.*)$/.exec(line);
+				if (mm) f[mm[1]] = mm[2].trim();
+			}
+			return { frontmatter: f, body: m[2] };
+		})();
+		const twice = comicSpec.convertLocal({ frontmatter: fm2, body: body2, filename: 'Ghostblade.md' });
+		expect(twice).toBe(once);
 	});
 });

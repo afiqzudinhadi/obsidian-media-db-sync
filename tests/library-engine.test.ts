@@ -15,12 +15,14 @@ interface FakeSpecOptions {
 	isActive?(fm: Record<string, string>): boolean;
 	sync?(ctx: LibraryNoteCtx, deps: SpecDeps): ReturnType<MediaTypeSpec['sync']>;
 	resolve?(ctx: LibraryNoteCtx, deps: SpecDeps): ReturnType<MediaTypeSpec['resolve']>;
+	convertLocal?(ctx: LibraryNoteCtx): string;
 	throttleMs?: number;
 }
 
 function makeFakeSpec(opts: FakeSpecOptions = {}) {
 	const syncCalls: LibraryNoteCtx[] = [];
 	const resolveCalls: LibraryNoteCtx[] = [];
+	const convertLocalCalls: LibraryNoteCtx[] = [];
 	const spec: MediaTypeSpec = {
 		typeName: 'manga',
 		itemType: FAKE_ITEM_TYPE,
@@ -38,8 +40,12 @@ function makeFakeSpec(opts: FakeSpecOptions = {}) {
 			if (opts.sync) return await opts.sync(ctx, deps);
 			return { content: renderFake(ctx.frontmatter, extractMyNotes(ctx.body)), flipped: false };
 		},
+		convertLocal: ctx => {
+			convertLocalCalls.push(ctx);
+			return opts.convertLocal ? opts.convertLocal(ctx) : renderFake(ctx.frontmatter, extractMyNotes(ctx.body));
+		},
 	};
-	return { spec, syncCalls, resolveCalls };
+	return { spec, syncCalls, resolveCalls, convertLocalCalls };
 }
 
 const ACTIVE_NOTE = `---
@@ -108,6 +114,68 @@ describe('libraryFolderSync: tiering', () => {
 		const report = await libraryFolderSync(spec, deps, { full: true });
 		expect(report.skippedStatic).toBe(0);
 		expect(syncCalls.length).toBe(1);
+	});
+});
+
+describe('libraryFolderSync: local conversion (no-id notes)', () => {
+	test('unflagged no-id note: convertLocal differs from content -> written once, convertedLocal++, skippedNoId still counted, sync() never called', async () => {
+		const { spec, syncCalls } = makeFakeSpec({ convertLocal: () => 'CONVERTED' });
+		const { deps, writes } = makeDeps([{ path: 'A.md', content: NO_ID_NOTE }]);
+		const report = await libraryFolderSync(spec, deps, {});
+		expect(report.convertedLocal).toBe(1);
+		expect(report.skippedNoId).toBe(1);
+		expect(writes.length).toBe(1);
+		expect(writes[0].content).toBe('CONVERTED');
+		expect(syncCalls.length).toBe(0);
+	});
+
+	test('idempotence: second pass over already-converted content writes nothing, convertedLocal stays 0', async () => {
+		const { spec } = makeFakeSpec({ convertLocal: () => 'CONVERTED' });
+		const { deps, writes } = makeDeps([{ path: 'A.md', content: NO_ID_NOTE }]);
+		const first = await libraryFolderSync(spec, deps, {});
+		expect(first.convertedLocal).toBe(1);
+		expect(writes.length).toBe(1);
+
+		const second = makeDeps([{ path: 'A.md', content: writes[0].content }]);
+		const report2 = await libraryFolderSync(spec, second.deps, {});
+		expect(second.writes.length).toBe(0);
+		expect(report2.convertedLocal).toBe(0);
+	});
+
+	test('convertLocal output identical to existing content -> no write, convertedLocal stays 0', async () => {
+		const { spec } = makeFakeSpec({ convertLocal: () => NO_ID_NOTE });
+		const { deps, writes } = makeDeps([{ path: 'A.md', content: NO_ID_NOTE }]);
+		const report = await libraryFolderSync(spec, deps, {});
+		expect(report.convertedLocal).toBe(0);
+		expect(writes.length).toBe(0);
+	});
+
+	test('no_resolve-flagged no-id note: still converted+written, but excluded from skippedNoId (no_resolve log line stays)', async () => {
+		const { spec } = makeFakeSpec({ convertLocal: () => 'CONVERTED' });
+		const flagged = NO_ID_NOTE.replace('fake_id: ', 'fake_id: \nno_resolve: true');
+		const logs: string[] = [];
+		const { deps, writes } = makeDeps([{ path: 'A.md', content: flagged }]);
+		deps.log = (m: string) => logs.push(m);
+		const report = await libraryFolderSync(spec, deps, {});
+		expect(report.convertedLocal).toBe(1);
+		expect(report.skippedNoId).toBe(0);
+		expect(writes.length).toBe(1);
+		expect(logs.some(l => l.includes('no_resolve flag set, skipping sync: A.md'))).toBe(true);
+	});
+
+	test('dryRun: convertedLocal counted but no writeNote call', async () => {
+		const { spec } = makeFakeSpec({ convertLocal: () => 'CONVERTED' });
+		const { deps, writes } = makeDeps([{ path: 'A.md', content: NO_ID_NOTE }]);
+		const report = await libraryFolderSync(spec, deps, { dryRun: true });
+		expect(report.convertedLocal).toBe(1);
+		expect(writes.length).toBe(0);
+	});
+
+	test('no-id note does not sleep spec.throttleMs (no network involved)', async () => {
+		const { spec } = makeFakeSpec({ convertLocal: () => 'CONVERTED', throttleMs: 777 });
+		const { deps, slept } = makeDeps([{ path: 'A.md', content: NO_ID_NOTE }]);
+		await libraryFolderSync(spec, deps, {});
+		expect(slept).not.toContain(777);
 	});
 });
 

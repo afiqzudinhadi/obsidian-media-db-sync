@@ -449,6 +449,7 @@ describe('sync summary transparency', () => {
 			isActive: () => true,
 			resolve: async () => null,
 			sync: async () => null,
+			convertLocal: () => '',
 		};
 
 		const report = await c.syncType(noDataSpec, false);
@@ -478,6 +479,7 @@ describe('resolveType: interactive candidate picker (needsChoice)', () => {
 		isActive: () => true,
 		resolve: async () => ({ candidates: CANDIDATES }),
 		sync: async () => null,
+		convertLocal: () => '',
 	};
 
 	function makeCandidateDeps(writes: { path: string; content: string }[]): LibraryEngineDeps {

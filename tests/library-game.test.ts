@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildGame, renderGame, parseSteamDate, gameSpec, type GameRecord } from 'packages/obsidian/src/library/game';
+import { buildGame, buildGameLocal, renderGame, parseSteamDate, gameSpec, type GameRecord } from 'packages/obsidian/src/library/game';
 import type { SpecDeps, LibraryNoteCtx } from 'packages/obsidian/src/library/types';
 import steamFixture from 'tests/fixtures/steam-appdetails.json';
 import rawgFixture from 'tests/fixtures/rawg-game.json';
@@ -538,5 +538,93 @@ describe('gameSpec.sync — rawg enrich', () => {
 		const deps = makeDeps({ http: async () => ({}), getKey: () => 'rawgkey' });
 		const result = await gameSpec.sync(ctxFor({ rawg_id: '4200' }), deps);
 		expect(result).toBeNull();
+	});
+});
+
+describe('buildGameLocal: pure prev-only mapper (no API payload)', () => {
+	test('empty prev + filename fallback -> title from filename, everything else empty/null', () => {
+		const r = buildGameLocal({}, 'Avatar - Frontiers of Pandora.md');
+		expect(r.title).toBe('Avatar - Frontiers of Pandora');
+		expect(r.playStatus).toBe('Unplayed');
+		expect(r.rating).toBe('0');
+		expect(r.ratingStars).toBe('');
+		expect(r.developer).toEqual([]);
+		expect(r.publisher).toEqual([]);
+		expect(r.platforms).toEqual([]);
+		expect(r.genre).toEqual([]);
+		expect(r.releaseDate).toBe('');
+		expect(r.metacritic).toBeNull();
+		expect(r.steamAppid).toBe('');
+		expect(r.rawgId).toBe('');
+		expect(r.poster).toBeNull();
+		expect(r.url).toBe('');
+		expect(r.description).toBe('');
+	});
+
+	test('prev title wins over filename', () => {
+		expect(buildGameLocal({ title: 'Avatar' }, 'X.md').title).toBe('Avatar');
+	});
+
+	test('skeleton legacy `played` field converted via existing derive helper', () => {
+		expect(buildGameLocal({ played: 'true' }, 'X.md').playStatus).toBe('Played');
+		expect(buildGameLocal({ played: 'false' }, 'X.md').playStatus).toBe('Unplayed');
+	});
+
+	test('canonical `play_status` wins over legacy `played`', () => {
+		expect(buildGameLocal({ played: 'false', play_status: 'Playing' }, 'X.md').playStatus).toBe('Playing');
+	});
+
+	test('carries whatever id fields prev already has (steam_appid, rawg_id)', () => {
+		const r = buildGameLocal({ steam_appid: '2379780', rawg_id: '4200' }, 'X.md');
+		expect(r.steamAppid).toBe('2379780');
+		expect(r.rawgId).toBe('4200');
+	});
+
+	test('existing url carried forward untouched, no synthetic Steam/RAWG link built', () => {
+		const r = buildGameLocal({ url: 'https://store.steampowered.com/app/2379780/Avatar/' }, 'X.md');
+		expect(r.url).toBe('https://store.steampowered.com/app/2379780/Avatar/');
+	});
+});
+
+describe('gameSpec.convertLocal: no-network canonical conversion for id-less notes', () => {
+	test('stock-skeleton note -> canonical game_item shape, title falls back to filename', () => {
+		const fm = { type: 'game', played: 'true', personalRating: '3' };
+		const ctx: LibraryNoteCtx = { frontmatter: fm, body: '## My Notes\n\nsome notes', filename: 'Avatar.md' };
+		const content = gameSpec.convertLocal(ctx);
+		expect(content).toContain('type: game_item');
+		expect(content).toContain('title: Avatar');
+		expect(content).toContain('play_status: Played');
+		expect(content).toContain('rating: 3');
+		expect(content).toContain('## My Notes');
+		expect(content).toContain('some notes');
+	});
+
+	test('preserves custom sections through conversion', () => {
+		const ctx: LibraryNoteCtx = {
+			frontmatter: {},
+			body: '## Mods\n\nreshade\n\n## My Notes\n\nkeep me',
+			filename: 'X.md',
+		};
+		const content = gameSpec.convertLocal(ctx);
+		expect(content).toContain('## Mods');
+		expect(content).toContain('reshade');
+		expect(content).toContain('keep me');
+	});
+
+	test('round-trip idempotence: re-running convertLocal on its own output yields byte-identical content', () => {
+		const fm = { type: 'game', played: 'false', personalRating: '', url: 'https://store.steampowered.com/app/2379780/Avatar/' };
+		const ctx: LibraryNoteCtx = { frontmatter: fm, body: '## My Notes\n\n', filename: 'Avatar.md' };
+		const once = gameSpec.convertLocal(ctx);
+		const { frontmatter: fm2, body: body2 } = (() => {
+			const m = /^---\n([\s\S]*?)\n---([\s\S]*)$/.exec(once)!;
+			const f: Record<string, string> = {};
+			for (const line of m[1].split('\n')) {
+				const mm = /^([A-Za-z0-9_]+):\s*(.*)$/.exec(line);
+				if (mm) f[mm[1]] = mm[2].trim();
+			}
+			return { frontmatter: f, body: m[2] };
+		})();
+		const twice = gameSpec.convertLocal({ frontmatter: fm2, body: body2, filename: 'Avatar.md' });
+		expect(twice).toBe(once);
 	});
 });

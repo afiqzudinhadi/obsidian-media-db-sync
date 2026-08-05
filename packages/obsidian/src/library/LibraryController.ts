@@ -32,7 +32,7 @@ const KEY_LABEL: Record<'rawg' | 'comicvine', string> = {
 };
 
 function emptyReport(): LibraryReport {
-	return { scanned: 0, synced: 0, written: 0, skippedNoId: 0, skippedStatic: 0, skippedNoData: 0, flipped: [], errors: [] };
+	return { scanned: 0, synced: 0, written: 0, skippedNoId: 0, skippedStatic: 0, skippedNoData: 0, convertedLocal: 0, flipped: [], errors: [] };
 }
 
 function emptyResolveReport(): LibraryResolveReport {
@@ -176,6 +176,7 @@ export class LibraryController {
 	 * success just because skippedNoData/errors were left out of the message. */
 	private buildSyncSummary(spec: MediaTypeSpec, mode: string, report: LibraryReport): string {
 		let msg = `Library ${mode}sync (${spec.typeName}): ${report.scanned} scanned, ${report.synced} ok, ${report.written} updated, ${report.flipped.length} flipped`;
+		if (report.convertedLocal) msg += `, ${report.convertedLocal} converted (local)`;
 		if (report.skippedStatic) msg += `, ${report.skippedStatic} static`;
 		if (report.skippedNoId) msg += `, ${report.skippedNoId} no-id`;
 		if (report.skippedNoData) msg += `, ${report.skippedNoData} no-data (see console)`;

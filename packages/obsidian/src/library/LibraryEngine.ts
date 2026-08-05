@@ -19,6 +19,7 @@ export interface LibraryReport {
 	skippedNoId: number;
 	skippedStatic: number;
 	skippedNoData: number;
+	convertedLocal: number;
 	flipped: string[];
 	errors: { path: string; error: string }[];
 }
@@ -51,7 +52,7 @@ function isSkippableNote(filename: string, fm: Record<string, string>, itemType:
 }
 
 export async function libraryFolderSync(spec: MediaTypeSpec, deps: LibraryEngineDeps, opts: { full?: boolean; dryRun?: boolean } = {}): Promise<LibraryReport> {
-	const report: LibraryReport = { scanned: 0, synced: 0, written: 0, skippedNoId: 0, skippedStatic: 0, skippedNoData: 0, flipped: [], errors: [] };
+	const report: LibraryReport = { scanned: 0, synced: 0, written: 0, skippedNoId: 0, skippedStatic: 0, skippedNoData: 0, convertedLocal: 0, flipped: [], errors: [] };
 	const notes = await deps.listNotes();
 	for (const note of notes) {
 		report.scanned++;
@@ -67,6 +68,18 @@ export async function libraryFolderSync(spec: MediaTypeSpec, deps: LibraryEngine
 					deps.log(`no_resolve flag set, skipping sync: ${note.path}`);
 				} else {
 					report.skippedNoId++;
+				}
+				// Id-less notes never reach spec.sync() (no API id to enrich from), but must still
+				// stop being permanently invisible to type-filtered Bases queries -- convertLocal
+				// builds canonical `<type>_item` content purely from what the note already has, no
+				// network. One-time in practice: re-parsing the converted note yields byte-identical
+				// output next pass, so diff-on-write means it's never rewritten (or re-counted) again.
+				const localCtx: LibraryNoteCtx = { frontmatter, body, filename };
+				const converted = spec.convertLocal(localCtx);
+				if (converted !== content) {
+					report.convertedLocal++;
+					if (!opts.dryRun) await deps.writeNote(note.path, converted);
+					deps.log(`${opts.dryRun ? '[dry] ' : ''}converted (local) ${note.path}`);
 				}
 				continue;
 			}

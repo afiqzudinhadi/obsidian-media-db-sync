@@ -92,6 +92,41 @@ export function buildComic(cv: any, prev: Record<string, string>): ComicRecord {
 	};
 }
 
+/**
+ * Pure mapper: prev frontmatter only (no API payload) -> canonical ComicRecord, for id-less
+ * notes that can never be resolved (or haven't been resolved yet) but still need a canonical
+ * `comic_item` shape so they aren't permanently invisible to type-filtered Bases queries.
+ * User-managed fields go through the same derive helpers as buildComic (including deriveStatus's
+ * 'Ongoing' default); everything API-derived (issues, publisher, people, start year, poster,
+ * Comic Vine url, description) is empty/null. `title` falls back to the filename (minus `.md`)
+ * when the note has no title field at all.
+ */
+export function buildComicLocal(prev: Record<string, string>, filename: string): ComicRecord {
+	const title = stripQuotes(prev['title']) || filename.replace(/\.md$/, '');
+	const { rating, ratingStars } = deriveRating(prev);
+	const readStatus = deriveReadStatus(prev);
+	const lastReadIssue = stripQuotes(prev['last_read_issue']);
+	const comicvineId = stripQuotes(prev['comicvine_id']);
+
+	return {
+		title,
+		readStatus,
+		rating,
+		ratingStars,
+		lastReadIssue,
+		latestIssue: parseNumOrNull(prev['latest_issue']),
+		issues: null,
+		status: deriveStatus(prev),
+		publisher: '',
+		people: [],
+		startYear: '',
+		comicvineId,
+		poster: null,
+		url: '',
+		description: '',
+	};
+}
+
 export function renderComic(r: ComicRecord, myNotes: string, customSections: CustomSection[] = []): string {
 	const fm = [
 		'---',
@@ -295,5 +330,10 @@ export const comicSpec: MediaTypeSpec = {
 
 		const content = renderComic(record, extractMyNotes(ctx.body), extractCustomSections(ctx.body));
 		return { content, flipped };
+	},
+
+	convertLocal(ctx: LibraryNoteCtx): string {
+		const record = buildComicLocal(ctx.frontmatter, ctx.filename);
+		return renderComic(record, extractMyNotes(ctx.body), extractCustomSections(ctx.body));
 	},
 };

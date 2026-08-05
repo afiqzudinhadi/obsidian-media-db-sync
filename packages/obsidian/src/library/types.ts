@@ -28,6 +28,11 @@ export interface MediaTypeSpec {
 	isActive(fm: Record<string, string>): boolean;
 	resolve(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<ResolveOutcome | null>; // null = no match/error
 	sync(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<{ content: string; flipped: boolean } | null>; // full new note content; null = skip
+	// Network-free canonical conversion for id-less notes: builds full canonical note content
+	// purely from prev frontmatter + body (no API calls), so stock-skeleton/unresolvable notes
+	// still get a `<type>_item` shape (and so become visible to Bases) instead of staying invisible
+	// forever. Pure + idempotent -- same prev in, same content out, every time.
+	convertLocal(ctx: LibraryNoteCtx): string;
 }
 
 export interface SpecDeps {
