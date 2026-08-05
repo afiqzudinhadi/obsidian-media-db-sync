@@ -286,10 +286,16 @@ export async function obsidianFetch(input: Request): Promise<Response> {
 		obs_headers[key] = value;
 	});
 
+	// Request bodies (e.g. POST JSON) must reach requestUrl -- read them off the Request once
+	// here. GET/HEAD requests have no body, .text() resolves '' for them, so `body` stays
+	// undefined and existing GET-only call sites are unaffected.
+	const rawBody = await input.text();
+
 	const res = await requestUrl({
 		url: input.url,
 		method: input.method,
 		headers: obs_headers,
+		body: rawBody || undefined,
 		throw: false, // Do not throw on error, handle it manually
 	});
 

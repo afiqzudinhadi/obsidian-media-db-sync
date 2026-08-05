@@ -15,6 +15,7 @@ function makeDeps(overrides: Partial<SpecDeps> = {}): SpecDeps & { notifyCalls: 
 	return {
 		http: async () => ({}),
 		httpText: async () => '',
+		httpPostJson: async () => ({}),
 		getKey: () => '',
 		log: (msg: string) => {
 			logCalls.push(msg);

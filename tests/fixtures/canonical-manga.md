@@ -17,6 +17,7 @@ score: 8.7
 published_from: 2018-12-03
 published_to: null
 mal_id: 116778
+anilist_id: 105778
 mangadex_id: abc-123
 rss: "https://example.com/csm-feed.xml"
 poster: "https://cdn.myanimelist.net/images/manga/3/216464l.jpg"

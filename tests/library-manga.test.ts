@@ -1,12 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildManga, renderManga, mangaSpec, type MangaRecord } from 'packages/obsidian/src/library/manga';
+import { buildManga, buildMangaFromAniList, renderManga, mangaSpec, type MangaRecord } from 'packages/obsidian/src/library/manga';
 import type { SpecDeps, LibraryNoteCtx } from 'packages/obsidian/src/library/types';
+import { TmdbRateLimitError } from 'packages/obsidian/src/watchlist/SyncEngine';
 import jikanFixture from 'tests/fixtures/jikan-manga-csm.json';
 import mangadexFixture from 'tests/fixtures/mangadex-feed.json';
+import anilistFixture from 'tests/fixtures/anilist-manga-csm.json';
 
 const JIKAN_DATA = jikanFixture.data;
+const ANILIST_MEDIA = anilistFixture.data.Media;
 
 const EMPTY_PREV: Record<string, string> = {};
 
@@ -16,6 +19,7 @@ function makeDeps(overrides: Partial<SpecDeps> = {}): SpecDeps & { notifyCalls: 
 	return {
 		http: async () => ({}),
 		httpText: async () => '',
+		httpPostJson: async () => ({}),
 		getKey: () => '',
 		log: (msg: string) => {
 			logCalls.push(msg);
@@ -164,6 +168,7 @@ describe('renderManga golden', () => {
 		publishedFrom: '2018-12-03',
 		publishedTo: null,
 		malId: '116778',
+		anilistId: '105778',
 		mangadexId: 'abc-123',
 		rss: 'https://example.com/csm-feed.xml',
 		poster: 'https://cdn.myanimelist.net/images/manga/3/216464l.jpg',
@@ -682,5 +687,337 @@ describe('mangaSpec.resolve — best-effort MangaDex id resolve (I4)', () => {
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man', mangadex_id: 'existing-uuid' }, ''), deps);
 		expect(result).toEqual({ mal_id: '116778' });
 		expect(mangadexCalled).toBe(false);
+	});
+});
+
+describe('buildMangaFromAniList field mapping', () => {
+	const r = buildMangaFromAniList(ANILIST_MEDIA, EMPTY_PREV);
+
+	test('core fields', () => {
+		expect(r.title).toBe('Chainsaw Man');
+		expect(r.anilistId).toBe('105778');
+		expect(r.malId).toBe('116778'); // from idMal bridge
+		expect(r.status).toBe('Publishing'); // RELEASING -> Publishing
+		expect(r.chapters).toBeNull();
+		expect(r.volumes).toBeNull();
+		expect(r.genre).toEqual(['Action', 'Comedy', 'Horror', 'Supernatural']);
+		expect(r.poster).toBe('https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx105778-JCftt5T5vNAY.jpg');
+		expect(r.url).toBe('https://myanimelist.net/manga/116778'); // MAL convention, mal_id present
+	});
+
+	test('authors: only staff roles containing "Story" -> excludes Letterer', () => {
+		expect(r.authors).toEqual(['Tatsuki Fujimoto']);
+	});
+
+	test('score: averageScore 85 -> 8.5', () => {
+		expect(r.score).toBe(8.5);
+	});
+	test('averageScore 73 -> 7.3', () => {
+		expect(buildMangaFromAniList({ ...ANILIST_MEDIA, averageScore: 73 }, EMPTY_PREV).score).toBe(7.3);
+	});
+	test('non-number averageScore -> null', () => {
+		expect(buildMangaFromAniList({ ...ANILIST_MEDIA, averageScore: null }, EMPTY_PREV).score).toBeNull();
+	});
+
+	test('dates: startDate full -> ISO padded', () => {
+		expect(r.publishedFrom).toBe('2018-12-03');
+	});
+	test('dates: endDate all-null parts -> null', () => {
+		expect(r.publishedTo).toBeNull();
+	});
+	test('dates: partial date (missing day) -> null, not a malformed ISO string', () => {
+		const media = { ...ANILIST_MEDIA, startDate: { year: 2018, month: 12, day: null } };
+		expect(buildMangaFromAniList(media, EMPTY_PREV).publishedFrom).toBeNull();
+	});
+
+	test('description: <br> -> newline, <i> stripped, trimmed', () => {
+		expect(r.synopsis).toBe('Denji has been robbed of a normal life ever since his Chainsaw Devil, Pochita, merged with him.\nNow he hunts devils for a living.');
+	});
+
+	test('eng_name empty when title.english === title.romaji', () => {
+		expect(r.engName).toBe('');
+	});
+	test('eng_name set when title.english differs from title.romaji', () => {
+		const media = { ...ANILIST_MEDIA, title: { romaji: 'Chainsaw Man', english: 'Chainsaw Man EN Alt' } };
+		expect(buildMangaFromAniList(media, EMPTY_PREV).engName).toBe('Chainsaw Man EN Alt');
+	});
+
+	test('status map: exhaustive', () => {
+		const map: Record<string, string> = {
+			RELEASING: 'Publishing',
+			FINISHED: 'Finished',
+			HIATUS: 'On Hiatus',
+			CANCELLED: 'Canceled',
+			NOT_YET_RELEASED: 'Not Yet Published',
+		};
+		for (const [anilist, expected] of Object.entries(map)) {
+			expect(buildMangaFromAniList({ ...ANILIST_MEDIA, status: anilist }, EMPTY_PREV).status).toBe(expected);
+		}
+	});
+
+	test('idMal null -> mal_id falls back to prev (preserves existing mal_id, does not clobber)', () => {
+		const media = { ...ANILIST_MEDIA, idMal: null };
+		const result = buildMangaFromAniList(media, { mal_id: '999' });
+		expect(result.malId).toBe('999');
+		expect(result.url).toBe('https://myanimelist.net/manga/999');
+	});
+	test('idMal null + no prev mal_id -> mal_id empty, url falls back to AniList siteUrl', () => {
+		const media = { ...ANILIST_MEDIA, idMal: null };
+		const result = buildMangaFromAniList(media, EMPTY_PREV);
+		expect(result.malId).toBe('');
+		expect(result.url).toBe('https://anilist.co/manga/105778');
+	});
+
+	test('user-field preservation: read_status/rating/last_read_chapter/rss/mangadex_id carried from prev (shared with buildManga)', () => {
+		const prev = {
+			read_status: 'Reading',
+			rating: '4',
+			rating_stars: '⭐️⭐️⭐️⭐️',
+			last_read_chapter: '150',
+			rss: 'https://x.y/feed.xml',
+			mangadex_id: 'abc-123',
+			latest_chapter: '213',
+			last_chapter_date: '2026-07-16',
+		};
+		const result = buildMangaFromAniList(ANILIST_MEDIA, prev);
+		expect(result.readStatus).toBe('Reading');
+		expect(result.rating).toBe('4');
+		expect(result.ratingStars).toBe('⭐️⭐️⭐️⭐️');
+		expect(result.lastReadChapter).toBe('150');
+		expect(result.rss).toBe('https://x.y/feed.xml');
+		expect(result.mangadexId).toBe('abc-123');
+		expect(result.latestChapter).toBe(213);
+		expect(result.lastChapterDate).toBe('2026-07-16');
+	});
+});
+
+describe('mangaSpec.hasId / isActive — anilist_id counts as an id too', () => {
+	test('hasId: anilist_id set, no mal_id -> true', () => {
+		expect(mangaSpec.hasId({ anilist_id: '105778' })).toBe(true);
+	});
+	test('isActive: never enriched (neither id) -> active', () => {
+		expect(mangaSpec.isActive({})).toBe(true);
+	});
+	test('isActive: anilist_id only, Publishing -> active', () => {
+		expect(mangaSpec.isActive({ anilist_id: '1', status: 'Publishing', read_status: 'Unread' })).toBe(true);
+	});
+	test('isActive: anilist_id only, Finished + Read -> static', () => {
+		expect(mangaSpec.isActive({ anilist_id: '1', status: 'Finished', read_status: 'Read' })).toBe(false);
+	});
+});
+
+describe('mangaSpec.resolve — AniList primary', () => {
+	function anilistPage(media: any[]) {
+		return { data: { Page: { media } } };
+	}
+
+	test('unique exact romaji match -> patches anilist_id + mal_id (idMal bridge)', async () => {
+		const deps = makeDeps({
+			http: async () => ({ data: [] }), // jikan/mangadex: no exact match -> mangadex_id left unset
+			httpPostJson: async () => anilistPage([{ id: 105778, idMal: 116778, title: { romaji: 'Chainsaw Man', english: 'Chainsaw Man' } }]),
+		});
+		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
+		expect(result).toEqual({ mal_id: '116778', anilist_id: '105778' });
+	});
+
+	test('unique exact match via english title only (case-insensitive) -> accepted', async () => {
+		const deps = makeDeps({
+			http: async () => ({ data: [] }),
+			httpPostJson: async () => anilistPage([{ id: 105778, idMal: 116778, title: { romaji: 'チェンソーマン', english: 'Chainsaw Man' } }]),
+		});
+		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
+		expect(result).toEqual({ mal_id: '116778', anilist_id: '105778' });
+	});
+
+	test('no exact match, sole AniList result -> accepted (unique-exact fallback rule)', async () => {
+		const deps = makeDeps({
+			http: async () => ({ data: [] }),
+			httpPostJson: async () => anilistPage([{ id: 999, idMal: 888, title: { romaji: 'Some Other Title', english: '' } }]),
+		});
+		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
+		expect(result).toEqual({ mal_id: '888', anilist_id: '999' });
+	});
+
+	test('AniList hit, idMal null (no MAL bridge) -> patch has anilist_id only', async () => {
+		const deps = makeDeps({
+			http: async () => ({ data: [] }),
+			httpPostJson: async () => anilistPage([{ id: 105778, idMal: null, title: { romaji: 'Chainsaw Man', english: 'Chainsaw Man' } }]),
+		});
+		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
+		expect(result).toEqual({ anilist_id: '105778' });
+	});
+
+	test('AniList ambiguous (multiple, no exact) -> falls back to Jikan search, logs anilist candidates', async () => {
+		const deps = makeDeps({
+			http: async () => ({ data: [{ mal_id: 116778, title: 'Chainsaw Man', title_english: 'Chainsaw Man' }] }),
+			httpPostJson: async () =>
+				anilistPage([
+					{ id: 1, idMal: 1, title: { romaji: 'Foo', english: '' }, startDate: { year: 2020 } },
+					{ id: 2, idMal: 2, title: { romaji: 'Bar', english: '' }, startDate: { year: 2021 } },
+				]),
+		});
+		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
+		expect(result).toEqual({ mal_id: '116778' });
+		expect(deps.logCalls.some(m => m.includes('ambiguous') && m.includes('anilist_id=1') && m.includes('Foo') && m.includes('anilist_id=2') && m.includes('Bar'))).toBe(true);
+	});
+
+	test('AniList miss (empty results) -> falls straight to Jikan, no ambiguous log from AniList side', async () => {
+		const deps = makeDeps({
+			http: async () => ({ data: [{ mal_id: 116778, title: 'Chainsaw Man', title_english: 'Chainsaw Man' }] }),
+			httpPostJson: async () => anilistPage([]),
+		});
+		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
+		expect(result).toEqual({ mal_id: '116778' });
+		expect(deps.logCalls.some(m => m.includes('anilist_id='))).toBe(false);
+	});
+
+	test('AniList search throws generic error -> log, falls back to Jikan (no overall failure)', async () => {
+		const deps = makeDeps({
+			http: async () => ({ data: [{ mal_id: 116778, title: 'Chainsaw Man', title_english: 'Chainsaw Man' }] }),
+			httpPostJson: async () => {
+				throw new Error('anilist down');
+			},
+		});
+		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
+		expect(result).toEqual({ mal_id: '116778' });
+		expect(deps.logCalls.some(m => m.toLowerCase().includes('anilist'))).toBe(true);
+	});
+
+	test('AniList search throws TmdbRateLimitError -> propagates, no Jikan fallback attempted', async () => {
+		let jikanCalled = false;
+		const deps = makeDeps({
+			http: async () => {
+				jikanCalled = true;
+				return { data: [] };
+			},
+			httpPostJson: async () => {
+				throw new TmdbRateLimitError('429');
+			},
+		});
+		await expect(mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps)).rejects.toBeInstanceOf(TmdbRateLimitError);
+		expect(jikanCalled).toBe(false);
+	});
+
+	test('AniList hit, no mangadex_id in fm -> mangadex resolve still attempted (best-effort, unchanged)', async () => {
+		const deps = makeDeps({
+			http: async (url: string) => (url.includes('mangadex.org') ? { data: [{ id: 'a1b2c3d4-uuid', attributes: { title: { en: 'Chainsaw Man' } } }] } : { data: [] }),
+			httpPostJson: async () => anilistPage([{ id: 105778, idMal: 116778, title: { romaji: 'Chainsaw Man', english: 'Chainsaw Man' } }]),
+		});
+		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
+		expect(result).toEqual({ mal_id: '116778', anilist_id: '105778', mangadex_id: 'a1b2c3d4-uuid' });
+	});
+
+	test('mangadex_id already present -> mangadex search skipped, even on an AniList hit', async () => {
+		let mangadexCalled = false;
+		const deps = makeDeps({
+			http: async (url: string) => {
+				if (url.includes('mangadex.org')) mangadexCalled = true;
+				return { data: [] };
+			},
+			httpPostJson: async () => anilistPage([{ id: 105778, idMal: 116778, title: { romaji: 'Chainsaw Man', english: 'Chainsaw Man' } }]),
+		});
+		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man', mangadex_id: 'existing-uuid' }, ''), deps);
+		expect(result).toEqual({ mal_id: '116778', anilist_id: '105778' });
+		expect(mangadexCalled).toBe(false);
+	});
+});
+
+describe('mangaSpec.sync — AniList primary enrich', () => {
+	test('anilist_id present -> fetches Media(id:...), builds AniList record', async () => {
+		let captured: any = null;
+		const deps = makeDeps({
+			httpPostJson: async (url: string, body: unknown) => {
+				captured = body;
+				return anilistFixture;
+			},
+		});
+		const fm = { anilist_id: '105778', read_status: 'Unread' };
+		const result = await mangaSpec.sync(ctxFor(fm), deps);
+		expect(result).not.toBeNull();
+		expect(result!.content).toContain('title: Chainsaw Man');
+		expect(result!.content).toContain('anilist_id: 105778');
+		expect(result!.content).toContain('mal_id: 116778');
+		expect(result!.content).toContain('status: Publishing');
+		expect(result!.content).toContain('score: 8.5');
+		expect((captured as any).query).toContain('Media');
+		expect((captured as any).query).toContain('MANGA');
+		expect((captured as any).variables).toEqual({ id: 105778 });
+	});
+
+	test('mal_id present, no anilist_id -> fetches Media(idMal:...), backfills anilist_id', async () => {
+		let captured: any = null;
+		const deps = makeDeps({
+			httpPostJson: async (url: string, body: unknown) => {
+				captured = body;
+				return anilistFixture;
+			},
+		});
+		const fm = { mal_id: '116778', read_status: 'Unread' };
+		const result = await mangaSpec.sync(ctxFor(fm), deps);
+		expect(result).not.toBeNull();
+		expect((captured as any).query).toContain('idMal');
+		expect((captured as any).variables).toEqual({ id: 116778 });
+		expect(result!.content).toContain('anilist_id: 105778');
+	});
+
+	test('AniList throw (generic error), mal_id present -> Jikan fallback, prior anilist_id preserved verbatim', async () => {
+		const deps = makeDeps({
+			httpPostJson: async () => {
+				throw new Error('anilist down');
+			},
+			http: async () => jikanFixture,
+		});
+		const fm = { anilist_id: '999999', mal_id: '116778', read_status: 'Read', latest_chapter: '213', last_chapter_date: '2026-07-16' };
+		const result = await mangaSpec.sync(ctxFor(fm), deps);
+		expect(result).not.toBeNull();
+		expect(result!.content).toContain('anilist_id: 999999');
+		expect(result!.content).toContain('mal_id: 116778');
+		expect(result!.content).toContain('latest_chapter: 213');
+		expect(deps.logCalls.some(m => m.toLowerCase().includes('anilist'))).toBe(true);
+	});
+
+	test('AniList throw, no mal_id available -> no Jikan fallback possible, returns null', async () => {
+		let jikanCalled = false;
+		const deps = makeDeps({
+			httpPostJson: async () => {
+				throw new Error('anilist deleted entry');
+			},
+			http: async () => {
+				jikanCalled = true;
+				return jikanFixture;
+			},
+		});
+		const result = await mangaSpec.sync(ctxFor({ anilist_id: '105778' }), deps);
+		expect(result).toBeNull();
+		expect(jikanCalled).toBe(false);
+		expect(deps.logCalls.some(m => m.toLowerCase().includes('anilist'))).toBe(true);
+	});
+
+	test('AniList throws TmdbRateLimitError -> propagates uncaught, no Jikan fallback attempted', async () => {
+		let jikanCalled = false;
+		const deps = makeDeps({
+			httpPostJson: async () => {
+				throw new TmdbRateLimitError('429');
+			},
+			http: async () => {
+				jikanCalled = true;
+				return jikanFixture;
+			},
+		});
+		await expect(mangaSpec.sync(ctxFor({ mal_id: '116778' }), deps)).rejects.toBeInstanceOf(TmdbRateLimitError);
+		expect(jikanCalled).toBe(false);
+	});
+
+	test('chapter cascade (rss) still works on top of an AniList-built record', async () => {
+		const deps = makeDeps({
+			httpPostJson: async () => anilistFixture,
+			httpText: async () => RSS_214,
+		});
+		const fm = { anilist_id: '105778', rss: 'https://example.com/csm-feed.xml', read_status: 'Read', latest_chapter: '213', last_chapter_date: '2026-07-16' };
+		const result = await mangaSpec.sync(ctxFor(fm), deps);
+		expect(result!.flipped).toBe(true);
+		expect(result!.content).toContain('latest_chapter: 214');
+		expect(result!.content).toContain('read_status: Unread');
+		expect(deps.notifyCalls).toEqual(['«Chainsaw Man» ch. 214 out']);
 	});
 });

@@ -75,6 +75,7 @@ function makeDeps(notes: { path: string; content: string }[], specDeps: Partial<
 		specDeps: {
 			http: async () => ({}),
 			httpText: async () => '',
+			httpPostJson: async () => ({}),
 			getKey: () => '',
 			log: () => {},
 			notify: () => {},

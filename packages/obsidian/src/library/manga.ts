@@ -3,9 +3,61 @@ import { parseFeed, latestChapter } from 'packages/obsidian/src/library/rss';
 import { stripQuotes, extractMyNotes, extractCustomSections, type CustomSection } from 'packages/obsidian/src/watchlist/parse';
 import { yamlList, yamlScalar, quotedOrNull } from 'packages/obsidian/src/watchlist/yaml';
 import { deriveReadStatus, deriveRating, parseNumOrNull } from 'packages/obsidian/src/library/convert';
+import { TmdbRateLimitError } from 'packages/obsidian/src/watchlist/SyncEngine';
 
 const JIKAN_BASE = 'https://api.jikan.moe/v4';
 const MANGADEX_BASE = 'https://api.mangadex.org';
+const ANILIST_BASE = 'https://graphql.anilist.co';
+
+// AniList field selection shared by the search + both by-id queries below. `status` comes back
+// as an ALL_CAPS enum (mapped via ANILIST_STATUS_MAP); dates come back as {year,month,day}
+// objects (mapped via aniListDate); description is HTML (mapped via stripAniListHtml).
+const ANILIST_MEDIA_FIELDS = `
+	id
+	idMal
+	title { romaji english }
+	status
+	chapters
+	volumes
+	averageScore
+	genres
+	staff(perPage: 6) {
+		edges { role node { name { full } } }
+	}
+	startDate { year month day }
+	endDate { year month day }
+	description(asHtml: false)
+	coverImage { large }
+	siteUrl
+`;
+
+const ANILIST_SEARCH_QUERY = `query ($q: String) {
+	Page(perPage: 8) {
+		media(search: $q, type: MANGA) {
+			${ANILIST_MEDIA_FIELDS}
+		}
+	}
+}`;
+
+const ANILIST_BY_ID_QUERY = `query ($id: Int) {
+	Media(id: $id, type: MANGA) {
+		${ANILIST_MEDIA_FIELDS}
+	}
+}`;
+
+const ANILIST_BY_IDMAL_QUERY = `query ($id: Int) {
+	Media(idMal: $id, type: MANGA) {
+		${ANILIST_MEDIA_FIELDS}
+	}
+}`;
+
+const ANILIST_STATUS_MAP: Record<string, string> = {
+	RELEASING: 'Publishing',
+	FINISHED: 'Finished',
+	HIATUS: 'On Hiatus',
+	CANCELLED: 'Canceled',
+	NOT_YET_RELEASED: 'Not Yet Published',
+};
 
 export interface MangaRecord {
 	title: string;
@@ -25,6 +77,7 @@ export interface MangaRecord {
 	publishedFrom: string | null;
 	publishedTo: string | null;
 	malId: string;
+	anilistId: string;
 	mangadexId: string;
 	rss: string;
 	poster: string | null;
@@ -82,12 +135,125 @@ export function buildManga(jikan: any, prev: Record<string, string>): MangaRecor
 		publishedFrom: jikan.published?.from ? String(jikan.published.from).slice(0, 10) : null,
 		publishedTo: jikan.published?.to ? String(jikan.published.to).slice(0, 10) : null,
 		malId: jikan.mal_id != null ? String(jikan.mal_id) : '',
+		anilistId: stripQuotes(prev['anilist_id']), // Jikan has no AniList concept -- carried through untouched
 		mangadexId,
 		rss,
 		poster: jikan.images?.jpg?.large_image_url ?? null,
 		url: jikan.url ?? '',
 		synopsis: jikan.synopsis ?? '',
 	};
+}
+
+/** AniList `{year,month,day}` date object -> ISO `YYYY-MM-DD`, or null when any part is missing
+ * (AniList leaves in-progress end dates as all-null rather than omitting the object). */
+function aniListDate(d: { year?: number | null; month?: number | null; day?: number | null } | null | undefined): string | null {
+	if (!d || d.year == null || d.month == null || d.day == null) return null;
+	const mm = String(d.month).padStart(2, '0');
+	const dd = String(d.day).padStart(2, '0');
+	return `${d.year}-${mm}-${dd}`;
+}
+
+/** AniList `description(asHtml:false)` still carries a handful of literal tags (`<br>`, `<i>`,
+ * etc.) and HTML entities -- strip both down to plain text for the synopsis field. */
+function stripAniListHtml(html: string | null | undefined): string {
+	if (!html) return '';
+	return html
+		.replace(/<br\s*\/?>/gi, '\n')
+		.replace(/<\/?[^>]+(>|$)/g, '')
+		.replace(/&nbsp;/gi, ' ')
+		.replace(/&amp;/gi, '&')
+		.replace(/&lt;/gi, '<')
+		.replace(/&gt;/gi, '>')
+		.replace(/&quot;/gi, '"')
+		.replace(/&#39;/gi, "'")
+		.trim();
+}
+
+/**
+ * Pure mapper: AniList `Media` payload (the unwrapped `data.Media` object) + prev frontmatter ->
+ * canonical MangaRecord. Mirrors `buildManga`'s user-field preservation contract exactly; only
+ * the upstream field mapping differs. `mal_id` prefers AniList's `idMal` bridge but falls back to
+ * whatever mal_id the note already carried -- AniList entries without a MAL counterpart (e.g.
+ * webtoons) must not clobber a manually-set mal_id.
+ */
+export function buildMangaFromAniList(media: any, prev: Record<string, string>): MangaRecord {
+	const romaji: string = media.title?.romaji ?? '';
+	const english: string = media.title?.english ?? '';
+	const engName = english && english !== romaji ? english : '';
+
+	const { rating, ratingStars } = deriveRating(prev);
+	const readStatus = deriveReadStatus(prev);
+	const lastReadChapter = stripQuotes(prev['last_read_chapter']);
+	const rss = stripNullSentinel(stripQuotes(prev['rss']));
+	const mangadexId = stripQuotes(prev['mangadex_id']);
+
+	const score = typeof media.averageScore === 'number' ? Math.round(media.averageScore) / 10 : null;
+
+	const malId = media.idMal != null ? String(media.idMal) : stripQuotes(prev['mal_id']);
+	const anilistId = media.id != null ? String(media.id) : stripQuotes(prev['anilist_id']);
+
+	const authors: string[] = ((media.staff?.edges ?? []) as any[])
+		.filter(e => typeof e?.role === 'string' && e.role.includes('Story'))
+		.map(e => e?.node?.name?.full)
+		.filter(Boolean);
+
+	return {
+		title: romaji,
+		engName,
+		readStatus,
+		rating,
+		ratingStars,
+		lastReadChapter,
+		latestChapter: parseNumOrNull(prev['latest_chapter']),
+		lastChapterDate: stripNullSentinel(stripQuotes(prev['last_chapter_date'])),
+		chapters: media.chapters ?? null,
+		volumes: media.volumes ?? null,
+		status: ANILIST_STATUS_MAP[media.status as string] ?? '',
+		authors,
+		genre: (media.genres ?? []).filter(Boolean),
+		score,
+		publishedFrom: aniListDate(media.startDate),
+		publishedTo: aniListDate(media.endDate),
+		malId,
+		anilistId,
+		mangadexId,
+		rss,
+		poster: media.coverImage?.large ?? null,
+		// existing url convention = MAL page; only fall back to AniList's own page when the note
+		// (still) has no mal_id at all -- e.g. AniList-only webtoons with no MAL counterpart
+		url: malId ? `https://myanimelist.net/manga/${malId}` : (media.siteUrl ?? ''),
+		synopsis: stripAniListHtml(media.description),
+	};
+}
+
+/** `Media(id|idMal: ...)` fetch -- throws (never returns a partial/null record) on GraphQL
+ * errors or a missing `Media` so callers can uniformly catch-and-fallback to Jikan. */
+async function fetchAniListMedia(deps: SpecDeps, query: string, variables: Record<string, unknown>): Promise<any> {
+	const res = await deps.httpPostJson(ANILIST_BASE, { query, variables }, {});
+	if (res?.errors?.length) throw new Error(`AniList error: ${res.errors[0]?.message ?? 'unknown'}`);
+	const media = res?.data?.Media;
+	if (!media) throw new Error('AniList: media not found');
+	return media;
+}
+
+/** `Page.media` search -- unlike `fetchAniListMedia`, a genuine empty result set is NOT an
+ * error (it's a legitimate "no matches", same as Jikan's search returning `data: []`); only
+ * GraphQL/network failures throw. */
+async function fetchAniListSearch(deps: SpecDeps, q: string): Promise<any[]> {
+	const res = await deps.httpPostJson(ANILIST_BASE, { query: ANILIST_SEARCH_QUERY, variables: { q } }, {});
+	if (res?.errors?.length) throw new Error(`AniList error: ${res.errors[0]?.message ?? 'unknown'}`);
+	return res?.data?.Page?.media ?? [];
+}
+
+function aniListTitles(m: any): string[] {
+	const titles = [m?.title?.romaji, m?.title?.english];
+	return titles.filter(Boolean).map((t: string) => String(t).toLowerCase());
+}
+
+/** Top-candidate identifying info for ambiguous-resolve logging (AniList side). */
+function candidateAniListSummary(m: any): string {
+	const year = m?.startDate?.year ? String(m.startDate.year) : '';
+	return `anilist_id=${m?.id ?? ''} «${m?.title?.romaji ?? ''}»${year ? ` (${year})` : ''}`;
 }
 
 export function renderManga(r: MangaRecord, myNotes: string, customSections: CustomSection[] = []): string {
@@ -111,6 +277,7 @@ export function renderManga(r: MangaRecord, myNotes: string, customSections: Cus
 		`published_from: ${r.publishedFrom ? r.publishedFrom : 'null'}`,
 		`published_to: ${r.publishedTo ? r.publishedTo : 'null'}`,
 		`mal_id: ${r.malId}`,
+		`anilist_id: ${r.anilistId}`,
 		`mangadex_id: ${r.mangadexId}`,
 		`rss: ${quotedOrNull(r.rss)}`,
 		`poster: ${quotedOrNull(r.poster)}`,
@@ -234,29 +401,66 @@ export const mangaSpec: MediaTypeSpec = {
 	itemType: 'manga_item',
 	folderSettingKey: 'libraryMangaFolder',
 	enabledSettingKey: 'libraryMangaEnabled',
-	throttleMs: 350,
+	throttleMs: 700, // AniList's keyless rate limit is 90 req/min
 
 	hasId(fm: Record<string, string>): boolean {
-		return !!stripQuotes(fm['mal_id']);
+		return !!stripQuotes(fm['mal_id']) || !!stripQuotes(fm['anilist_id']);
 	},
 
 	isActive(fm: Record<string, string>): boolean {
 		const malId = stripQuotes(fm['mal_id']);
+		const anilistId = stripQuotes(fm['anilist_id']);
 		const status = stripQuotes(fm['status']);
-		if (!malId || !status) return true; // never enriched -> needs first pass
+		if ((!malId && !anilistId) || !status) return true; // never enriched -> needs first pass
 		if (status === 'Publishing' || status === 'On Hiatus') return true;
 		if (stripQuotes(fm['read_status']) === 'Reading') return true;
 		if (stripNullSentinel(stripQuotes(fm['rss']))) return true;
 		return false; // Finished + Read/Unread/Dropped -> static
 	},
 
+	// AniList-primary: search AniList first (Page search, unique-exact vs romaji+english). A
+	// unique hit patches anilist_id (+ mal_id via idMal, when AniList has a MAL bridge for it).
+	// AniList miss/ambiguous/throw all fall back to the existing Jikan title-search resolve.
+	// TmdbRateLimitError is never treated as a fallback trigger -- it propagates so the engine's
+	// withRateLimitRetry wrapper (around the whole resolve() call) retries instead of masking a
+	// transient 429 as an AniList miss.
 	async resolve(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<Record<string, string> | null> {
 		const query = stripQuotes(ctx.frontmatter['title']) || ctx.filename.replace(/\.md$/, '');
 		if (!query) return null;
+
+		let anilistResults: any[] = [];
+		try {
+			anilistResults = await fetchAniListSearch(deps, query);
+		} catch (e) {
+			if (e instanceof TmdbRateLimitError) throw e;
+			deps.log(`manga anilist resolve failed for "${query}": ${String(e)}`);
+			anilistResults = [];
+		}
+
+		const q = query.toLowerCase();
+		const exactAni = anilistResults.filter(m => aniListTitles(m).includes(q));
+		const pickAni = exactAni.length === 1 ? exactAni[0] : exactAni.length === 0 && anilistResults.length === 1 ? anilistResults[0] : null;
+
+		if (pickAni) {
+			const patch: Record<string, string> = { anilist_id: String(pickAni.id) };
+			if (pickAni.idMal != null) patch.mal_id = String(pickAni.idMal);
+			if (!stripQuotes(ctx.frontmatter['mangadex_id'])) {
+				const mangadexId = await resolveMangadexId(query, deps);
+				if (mangadexId) patch.mangadex_id = mangadexId;
+			}
+			return patch;
+		}
+
+		if (anilistResults.length > 1) {
+			deps.log(`ambiguous "${query}": candidates: ${anilistResults.slice(0, 3).map(candidateAniListSummary).join('; ')}`);
+		}
+
+		// Jikan fallback (unchanged behavior)
 		let malId: string | null;
 		try {
 			malId = await resolveMalId(query, deps);
 		} catch (e) {
+			if (e instanceof TmdbRateLimitError) throw e;
 			deps.log(`manga resolve failed for "${query}": ${String(e)}`);
 			return null;
 		}
@@ -271,22 +475,41 @@ export const mangaSpec: MediaTypeSpec = {
 		return patch;
 	},
 
+	// AniList-primary: anilist_id present -> fetch by id; else mal_id -> fetch by idMal bridge.
+	// AniList throwing (network error, GraphQL error, not-found) falls back to the existing Jikan
+	// full-record fetch when a mal_id is available; with no mal_id there's no fallback path, so
+	// the sync is skipped (skippedNoData upstream). TmdbRateLimitError propagates uncaught (same
+	// retry-not-fallback reasoning as resolve() above).
 	async sync(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<{ content: string; flipped: boolean } | null> {
 		const fm = ctx.frontmatter;
 		const malId = stripQuotes(fm['mal_id']);
-		if (!malId) return null; // needs resolve() first
+		const anilistId = stripQuotes(fm['anilist_id']);
+		if (!malId && !anilistId) return null; // needs resolve() first
 
-		let jikanData: any;
+		let record: MangaRecord;
 		try {
-			const res = await deps.http(`${JIKAN_BASE}/manga/${malId}/full`, {});
-			jikanData = res?.data;
+			const media = anilistId
+				? await fetchAniListMedia(deps, ANILIST_BY_ID_QUERY, { id: Number(anilistId) })
+				: await fetchAniListMedia(deps, ANILIST_BY_IDMAL_QUERY, { id: Number(malId) });
+			record = buildMangaFromAniList(media, fm);
 		} catch (e) {
-			deps.log(`manga jikan fetch failed (mal_id ${malId}): ${String(e)}`);
-			return null;
-		}
-		if (!jikanData) return null;
+			if (e instanceof TmdbRateLimitError) throw e;
+			deps.log(`manga anilist fetch failed (${anilistId ? `anilist_id ${anilistId}` : `mal_id ${malId}`}): ${String(e)}`);
+			if (!malId) return null; // no mal_id -> no Jikan fallback possible
 
-		const record = buildManga(jikanData, fm);
+			let jikanData: any;
+			try {
+				const res = await deps.http(`${JIKAN_BASE}/manga/${malId}/full`, {});
+				jikanData = res?.data;
+			} catch (e2) {
+				if (e2 instanceof TmdbRateLimitError) throw e2;
+				deps.log(`manga jikan fetch failed (mal_id ${malId}): ${String(e2)}`);
+				return null;
+			}
+			if (!jikanData) return null;
+			record = buildManga(jikanData, fm);
+		}
+
 		const prevStatus = stripQuotes(fm['status']);
 		const prevLatestChapter = parseNumOrNull(fm['latest_chapter']);
 		const prevLastChapterDate = stripNullSentinel(stripQuotes(fm['last_chapter_date']));

@@ -77,7 +77,7 @@ describe('maybeCatchUp', () => {
 });
 
 function fakeSpecDeps() {
-	return { http: async () => ({}), httpText: async () => '', getKey: () => '', log: () => {}, notify: () => {} };
+	return { http: async () => ({}), httpText: async () => '', httpPostJson: async () => ({}), getKey: () => '', log: () => {}, notify: () => {} };
 }
 
 function deferredDeps(): { deps: LibraryEngineDeps; listNotesCalls: () => number; release: () => void } {

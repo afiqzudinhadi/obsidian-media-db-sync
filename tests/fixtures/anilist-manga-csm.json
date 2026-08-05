@@ -1,0 +1,30 @@
+{
+	"data": {
+		"Media": {
+			"id": 105778,
+			"idMal": 116778,
+			"title": {
+				"romaji": "Chainsaw Man",
+				"english": "Chainsaw Man"
+			},
+			"status": "RELEASING",
+			"chapters": null,
+			"volumes": null,
+			"averageScore": 85,
+			"genres": ["Action", "Comedy", "Horror", "Supernatural"],
+			"staff": {
+				"edges": [
+					{ "role": "Story & Art", "node": { "name": { "full": "Tatsuki Fujimoto" } } },
+					{ "role": "Letterer", "node": { "name": { "full": "Some Letterer" } } }
+				]
+			},
+			"startDate": { "year": 2018, "month": 12, "day": 3 },
+			"endDate": { "year": null, "month": null, "day": null },
+			"description": "Denji has been robbed of a normal life ever since his Chainsaw Devil, Pochita, merged with him.<br><i>Now he hunts devils for a living.</i>",
+			"coverImage": {
+				"large": "https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx105778-JCftt5T5vNAY.jpg"
+			},
+			"siteUrl": "https://anilist.co/manga/105778"
+		}
+	}
+}

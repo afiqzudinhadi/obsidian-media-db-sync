@@ -4,7 +4,7 @@ import { comicSpec } from 'packages/obsidian/src/library/comic';
 import { gameSpec } from 'packages/obsidian/src/library/game';
 import { libraryFolderResolve, libraryFolderSync, type LibraryEngineDeps, type LibraryReport, type LibraryResolveReport } from 'packages/obsidian/src/library/LibraryEngine';
 import { mangaSpec } from 'packages/obsidian/src/library/manga';
-import type { HttpJsonFn, HttpTextFn, MediaTypeSpec, SpecDeps } from 'packages/obsidian/src/library/types';
+import type { HttpJsonFn, HttpPostJsonFn, HttpTextFn, MediaTypeSpec, SpecDeps } from 'packages/obsidian/src/library/types';
 import type MediaDbPlugin from 'packages/obsidian/src/main';
 import { obsidianFetch } from 'packages/obsidian/src/utils/Utils';
 import { TmdbRateLimitError } from 'packages/obsidian/src/watchlist/SyncEngine';
@@ -91,12 +91,35 @@ export class LibraryController {
 		};
 	}
 
+	// POST-JSON counterpart of makeHttp -- needed for GraphQL APIs (AniList) that require a
+	// POST body instead of query-string params. Same 429/error handling as makeHttp.
+	private makeHttpPostJson(): HttpPostJsonFn {
+		return async (url: string, body: unknown, headers: Record<string, string>): Promise<any> => {
+			const res = await obsidianFetch(
+				new Request(url, {
+					method: 'POST',
+					body: JSON.stringify(body),
+					headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...headers },
+				}),
+			);
+			if (res.status === 429) {
+				const err = new TmdbRateLimitError(`Library API 429 for ${url}`);
+				const ra = Number(res.headers.get('retry-after'));
+				err.retryAfterMs = Number.isFinite(ra) && ra > 0 ? ra * 1000 : 2000;
+				throw err;
+			}
+			if (res.status !== 200) throw new Error(`Library API ${res.status} for ${url}`);
+			return await res.json();
+		};
+	}
+
 	/** dryRun=true routes flip notifications to the log instead of a real Notice -- a dry-run
 	 * preview shouldn't pop user-facing notices for changes that were never actually written. */
 	private makeSpecDeps(dryRun = false): SpecDeps {
 		return {
 			http: this.makeHttp(),
 			httpText: this.makeHttpText(),
+			httpPostJson: this.makeHttpPostJson(),
 			getKey: name => this.getKey(name),
 			log: msg => console.log(`[media-db-library] ${msg}`),
 			notify: msg => {

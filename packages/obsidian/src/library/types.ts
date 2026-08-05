@@ -1,5 +1,6 @@
 export type HttpJsonFn = (url: string, headers: Record<string, string>) => Promise<any>;
 export type HttpTextFn = (url: string, headers: Record<string, string>) => Promise<string>;
+export type HttpPostJsonFn = (url: string, body: unknown, headers: Record<string, string>) => Promise<any>;
 
 export interface LibraryNoteCtx {
 	frontmatter: Record<string, string>;
@@ -22,6 +23,7 @@ export interface MediaTypeSpec {
 export interface SpecDeps {
 	http: HttpJsonFn;
 	httpText: HttpTextFn;
+	httpPostJson: HttpPostJsonFn;
 	getKey(name: 'rawg' | 'comicvine'): string; // '' when unset
 	log(msg: string): void;
 	notify(msg: string): void;
