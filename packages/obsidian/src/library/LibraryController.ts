@@ -208,7 +208,7 @@ export class LibraryController {
 	}
 
 	/** Opens the real candidate picker modal; tests override this method directly to avoid needing a real Obsidian modal. */
-	private async pickCandidate(filename: string, candidates: ResolveCandidate[]): Promise<number | null> {
+	private async pickCandidate(filename: string, candidates: ResolveCandidate[]): Promise<number | 'never' | null> {
 		const modal = new CandidatePickerModal(this.plugin.app, filename, candidates);
 		return await modal.pick();
 	}
@@ -225,10 +225,17 @@ export class LibraryController {
 
 			let picked = 0;
 			let skipped = 0;
+			let marked = 0;
 			if (!dryRun) {
 				for (const entry of report.needsChoice) {
 					try {
 						const idx = await this.pickCandidate(entry.filename, entry.candidates);
+						if (idx === 'never') {
+							const content = await deps.readNote(entry.path);
+							await deps.writeNote(entry.path, patchFrontmatter(content, { no_resolve: 'true' }, { defaultType: spec.itemType }));
+							marked++;
+							continue;
+						}
 						const candidate = idx != null ? entry.candidates[idx] : undefined;
 						if (!candidate) {
 							skipped++;
@@ -248,6 +255,7 @@ export class LibraryController {
 			const mode = dryRun ? 'DRY-RUN ' : '';
 			let msg = `Library ${mode}resolve (${spec.typeName}): ${report.resolved.length} resolved, ${report.ambiguous.length} ambiguous/no match`;
 			if (report.needsChoice.length) msg += `, ${picked} picked, ${skipped} skipped`;
+			if (marked) msg += `, ${marked} marked no-resolve`;
 			if (report.errors.length) msg += `, ${report.errors.length} errors (see console)`;
 			this.notify(msg, 0);
 			return report;

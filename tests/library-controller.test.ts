@@ -587,6 +587,24 @@ describe('resolveType: interactive candidate picker (needsChoice)', () => {
 		expect(notices[0]).toContain('1 picked, 1 skipped');
 	});
 
+	test('pickCandidate fake returns \'never\' -> no_resolve patched via patchFrontmatter, not resolved, counted marked', async () => {
+		const c = new LibraryController(fakePlugin());
+		const notices: string[] = [];
+		(c as any).notify = (msg: string) => notices.push(msg);
+		const writes: { path: string; content: string }[] = [];
+		(c as any).makeDeps = () => makeCandidateDeps(writes);
+		(c as any).pickCandidate = async () => 'never';
+
+		const report = await c.resolveType(candidateSpec);
+
+		expect(report.resolved).toEqual([]);
+		expect(writes.length).toBe(1);
+		expect(writes[0].path).toBe('Mangas/Foo.md');
+		expect(writes[0].content).toContain('no_resolve: true');
+		expect(notices[0]).toContain('0 picked, 0 skipped');
+		expect(notices[0]).toContain('1 marked no-resolve');
+	});
+
 	test('no needsChoice entries -> summary omits the picked/skipped clause entirely', async () => {
 		const c = new LibraryController(fakePlugin());
 		const notices: string[] = [];

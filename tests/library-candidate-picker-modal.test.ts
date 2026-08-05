@@ -11,13 +11,14 @@ function fakeApp(): any {
 }
 
 describe('CandidatePickerModal', () => {
-	test('getItems: candidate labels followed by a trailing Skip item (null index)', () => {
+	test('getItems: candidate labels followed by Skip then Never resolve', () => {
 		const modal = new CandidatePickerModal(fakeApp(), 'Some Note.md', CANDIDATES);
 		const items = modal.getItems();
 		expect(items).toEqual([
 			{ label: 'Foo (2020)', index: 0 },
 			{ label: 'Bar (2021)', index: 1 },
 			{ label: 'Skip', index: null },
+			{ label: 'Never resolve (mark no_resolve)', index: 'never' },
 		]);
 	});
 
@@ -38,6 +39,13 @@ describe('CandidatePickerModal', () => {
 		const result = modal.pick();
 		modal.onChooseItem({ label: 'Skip', index: null }, {} as MouseEvent);
 		expect(await result).toBeNull();
+	});
+
+	test('onChooseItem(Never resolve) -> pick() resolves to \'never\'', async () => {
+		const modal = new CandidatePickerModal(fakeApp(), 'Some Note.md', CANDIDATES);
+		const result = modal.pick();
+		modal.onChooseItem({ label: 'Never resolve (mark no_resolve)', index: 'never' }, {} as MouseEvent);
+		expect(await result).toBe('never');
 	});
 
 	test('onClose without a prior choice (Esc / dismiss) -> pick() resolves to null', async () => {
