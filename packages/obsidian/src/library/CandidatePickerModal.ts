@@ -55,7 +55,10 @@ export class CandidatePickerModal extends FuzzySuggestModal<PickerItem> {
 	}
 
 	onClose(): void {
-		this.settle(null); // dismissed without choosing -> treat as skip
+		// Obsidian's selectSuggestion() calls close() BEFORE onChooseItem(), so settling here
+		// synchronously would discard a real choice. Defer one tick: a choice made in the same
+		// tick settles first and this becomes a no-op; a genuine dismissal settles as skip.
+		window.setTimeout(() => this.settle(null), 0);
 		this.contentEl.empty();
 	}
 

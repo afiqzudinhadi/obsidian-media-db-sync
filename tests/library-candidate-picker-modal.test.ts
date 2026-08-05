@@ -117,4 +117,13 @@ describe('CandidatePickerModal', () => {
 		modal.onClose(); // Obsidian calls onClose() after a choice too -- must not clobber the resolved value
 		expect(await result).toBe(0);
 	});
+
+	test('REAL Obsidian order — close() fires BEFORE onChooseItem: choice still wins over dismiss-skip', async () => {
+		const modal = new CandidatePickerModal(fakeApp(), 'Some Note.md', CANDIDATES);
+		const result = modal.pick();
+		// selectSuggestion() in Obsidian calls close() (→ onClose) first, THEN onChooseItem
+		modal.onClose();
+		modal.onChooseItem({ label: 'Foo (2020)', index: 0 }, {} as MouseEvent);
+		expect(await result).toBe(0);
+	});
 });
