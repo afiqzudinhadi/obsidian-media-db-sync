@@ -587,6 +587,19 @@ describe('mangaSpec.resolve', () => {
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
 		expect(result).toBeNull();
 	});
+	test('ambiguous -> logs top candidates with mal_id + title', async () => {
+		const deps = makeDeps({
+			http: async () => ({
+				data: [
+					{ mal_id: 1, title: 'Foo' },
+					{ mal_id: 2, title: 'Bar' },
+				],
+			}),
+		});
+		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);
+		expect(result).toBeNull();
+		expect(deps.logCalls.some(m => m.includes('ambiguous') && m.includes('mal_id=1') && m.includes('Foo') && m.includes('mal_id=2') && m.includes('Bar'))).toBe(true);
+	});
 	test('no results -> null', async () => {
 		const deps = makeDeps({ http: async () => ({ data: [] }) });
 		const result = await mangaSpec.resolve(ctxFor({ title: 'Chainsaw Man' }, ''), deps);

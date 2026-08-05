@@ -181,6 +181,12 @@ function resultTitles(r: any): string[] {
 	return titles.filter(Boolean).map((t: string) => String(t).toLowerCase());
 }
 
+/** Top-candidate identifying info for ambiguous-resolve logging. */
+function candidateSummary(r: any): string {
+	const year = r.published?.from ? String(r.published.from).slice(0, 4) : '';
+	return `mal_id=${r.mal_id ?? ''} «${r.title ?? ''}»${year ? ` (${year})` : ''}`;
+}
+
 async function resolveMalId(query: string, deps: SpecDeps): Promise<string | null> {
 	const qs = new URLSearchParams({ q: query, limit: '10' });
 	const res = await deps.http(`${JIKAN_BASE}/manga?${qs.toString()}`, {});
@@ -189,6 +195,9 @@ async function resolveMalId(query: string, deps: SpecDeps): Promise<string | nul
 	const q = query.toLowerCase();
 	const exacts = results.filter(r => resultTitles(r).includes(q));
 	const pick = exacts.length === 1 ? exacts[0] : exacts.length === 0 && results.length === 1 ? results[0] : null;
+	if (!pick) {
+		deps.log(`ambiguous "${query}": candidates: ${results.slice(0, 3).map(candidateSummary).join('; ')}`);
+	}
 	return pick ? String(pick.mal_id) : null;
 }
 

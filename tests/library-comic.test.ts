@@ -290,6 +290,20 @@ describe('comicSpec.resolve', () => {
 		const result = await comicSpec.resolve(ctxFor({ title: 'Absolute Batman' }), deps);
 		expect(result).toBeNull();
 	});
+	test('ambiguous -> logs top candidates with id + name', async () => {
+		const deps = makeDeps({
+			http: async () => ({
+				results: [
+					{ id: 1, name: 'Batman' },
+					{ id: 2, name: 'Batman Beyond' },
+				],
+			}),
+			getKey: () => 'cvkey',
+		});
+		const result = await comicSpec.resolve(ctxFor({ title: 'Absolute Batman' }), deps);
+		expect(result).toBeNull();
+		expect(deps.logCalls.some(m => m.includes('ambiguous') && m.includes('id=1') && m.includes('Batman') && m.includes('id=2') && m.includes('Batman Beyond'))).toBe(true);
+	});
 
 	test('no results -> null', async () => {
 		const deps = makeDeps({ http: async () => ({ results: [] }), getKey: () => 'cvkey' });

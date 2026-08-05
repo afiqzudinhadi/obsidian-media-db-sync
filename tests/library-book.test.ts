@@ -325,6 +325,19 @@ describe('bookSpec.resolve', () => {
 		const result = await bookSpec.resolve(ctxFor({ title: '1984' }, ''), deps);
 		expect(result).toBeNull();
 	});
+	test('ambiguous -> logs top candidates with olid + title', async () => {
+		const deps = makeDeps({
+			http: async () => ({
+				docs: [
+					{ key: '/works/OL1W', title: 'Foo' },
+					{ key: '/works/OL2W', title: 'Bar' },
+				],
+			}),
+		});
+		const result = await bookSpec.resolve(ctxFor({ title: '1984' }, ''), deps);
+		expect(result).toBeNull();
+		expect(deps.logCalls.some(m => m.includes('ambiguous') && m.includes('olid=OL1W') && m.includes('Foo') && m.includes('olid=OL2W') && m.includes('Bar'))).toBe(true);
+	});
 	test('no results -> null', async () => {
 		const deps = makeDeps({ http: async () => ({ docs: [] }) });
 		const result = await bookSpec.resolve(ctxFor({ title: '1984' }, ''), deps);
@@ -339,5 +352,49 @@ describe('bookSpec.resolve', () => {
 		const result = await bookSpec.resolve(ctxFor({ title: '1984' }, ''), deps);
 		expect(result).toBeNull();
 		expect(deps.logCalls.length).toBeGreaterThan(0);
+	});
+});
+
+describe('bookSpec.resolve — author hint (stock `author` / canonical `authors`)', () => {
+	test('stock `author` field present -> query is "title author", exact-title match still resolves', async () => {
+		let capturedUrl = '';
+		const deps = makeDeps({
+			http: async (url: string) => {
+				capturedUrl = url;
+				return olFixture;
+			},
+		});
+		const result = await bookSpec.resolve(ctxFor({ title: '1984', author: 'George Orwell' }, ''), deps);
+		const q = new URL(capturedUrl).searchParams.get('q');
+		expect(q).toBe('1984 George Orwell');
+		expect(result).toEqual({ olid: 'OL1168083W' });
+	});
+
+	test('canonical `authors` bracketed list -> first author used in query', async () => {
+		let capturedUrl = '';
+		const deps = makeDeps({
+			http: async (url: string) => {
+				capturedUrl = url;
+				return olFixture;
+			},
+		});
+		const result = await bookSpec.resolve(ctxFor({ title: '1984', authors: '[George Orwell, Someone Else]' }, ''), deps);
+		const q = new URL(capturedUrl).searchParams.get('q');
+		expect(q).toBe('1984 George Orwell');
+		expect(result).toEqual({ olid: 'OL1168083W' });
+	});
+
+	test('no author anywhere in frontmatter -> query is title only (unchanged behavior)', async () => {
+		let capturedUrl = '';
+		const deps = makeDeps({
+			http: async (url: string) => {
+				capturedUrl = url;
+				return olFixture;
+			},
+		});
+		const result = await bookSpec.resolve(ctxFor({ title: '1984' }, ''), deps);
+		const q = new URL(capturedUrl).searchParams.get('q');
+		expect(q).toBe('1984');
+		expect(result).toEqual({ olid: 'OL1168083W' });
 	});
 });

@@ -114,6 +114,26 @@ async function fetchDocs(query: string, deps: SpecDeps): Promise<any[]> {
 	return res?.docs ?? [];
 }
 
+/** Skeleton/legacy `author` (singular, stock) or canonical `authors` (bracketed list) frontmatter
+ * field -> first author name, used as a query hint to disambiguate common book titles against
+ * Open Library's `search.json`. Match rule is unaffected -- still checked against the OL doc's
+ * `title` field only. */
+function authorHint(fm: Record<string, string>): string {
+	const stock = stripQuotes(fm['author']);
+	const canonical = (fm['authors'] ?? '').trim().replace(/^\[|\]$/g, '');
+	const raw = stock || canonical;
+	if (!raw) return '';
+	return stripQuotes(raw.split(',')[0].trim());
+}
+
+/** Top-candidate identifying info for ambiguous-resolve logging. */
+function candidateSummary(d: any): string {
+	const olid = String(d.key ?? '').replace(/^\/works\//, '');
+	const year = d.first_publish_year != null ? String(d.first_publish_year) : '';
+	const author = Array.isArray(d.author_name) ? d.author_name.filter(Boolean).join(', ') : '';
+	return `olid=${olid} «${d.title ?? ''}»${year ? ` (${year})` : ''}${author ? ` ${author}` : ''}`;
+}
+
 export const bookSpec: MediaTypeSpec = {
 	typeName: 'book',
 	itemType: 'book_item',
@@ -135,19 +155,24 @@ export const bookSpec: MediaTypeSpec = {
 	},
 
 	async resolve(ctx: LibraryNoteCtx, deps: SpecDeps): Promise<Record<string, string> | null> {
-		const query = stripQuotes(ctx.frontmatter['title']) || ctx.filename.replace(/\.md$/, '');
-		if (!query) return null;
+		const title = stripQuotes(ctx.frontmatter['title']) || ctx.filename.replace(/\.md$/, '');
+		if (!title) return null;
+		const hint = authorHint(ctx.frontmatter);
+		const searchQuery = hint ? `${title} ${hint}` : title;
 		try {
-			const docs = await fetchDocs(query, deps);
+			const docs = await fetchDocs(searchQuery, deps);
 			if (docs.length === 0) return null;
-			const q = query.toLowerCase();
+			const q = title.toLowerCase();
 			const exacts = docs.filter(d => String(d.title ?? '').toLowerCase() === q);
 			const pick = exacts.length === 1 ? exacts[0] : exacts.length === 0 && docs.length === 1 ? docs[0] : null;
-			if (!pick) return null;
+			if (!pick) {
+				deps.log(`ambiguous "${searchQuery}": candidates: ${docs.slice(0, 3).map(candidateSummary).join('; ')}`);
+				return null;
+			}
 			const olid = String(pick.key ?? '').replace(/^\/works\//, '');
 			return olid ? { olid } : null;
 		} catch (e) {
-			deps.log(`book resolve failed for "${query}": ${String(e)}`);
+			deps.log(`book resolve failed for "${searchQuery}": ${String(e)}`);
 			return null;
 		}
 	},

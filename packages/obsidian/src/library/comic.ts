@@ -145,6 +145,13 @@ async function fetchVolumeResults(query: string, key: string, deps: SpecDeps): P
 	return Array.isArray(res?.results) ? res.results : [];
 }
 
+/** Top-candidate identifying info for ambiguous-resolve logging. */
+function candidateSummary(r: any): string {
+	const year = r.start_year != null ? String(r.start_year) : '';
+	const publisher = r.publisher?.name ?? '';
+	return `id=${r.id ?? ''} «${r.name ?? ''}»${year ? ` (${year})` : ''}${publisher ? ` ${publisher}` : ''}`;
+}
+
 export const comicSpec: MediaTypeSpec = {
 	typeName: 'comic',
 	itemType: 'comic_item',
@@ -180,7 +187,11 @@ export const comicSpec: MediaTypeSpec = {
 			const q = query.toLowerCase();
 			const exacts = results.filter(r => String(r.name ?? '').toLowerCase() === q);
 			const pick = exacts.length === 1 ? exacts[0] : exacts.length === 0 && results.length === 1 ? results[0] : null;
-			return pick && pick.id != null ? { comicvine_id: String(pick.id) } : null;
+			if (!pick) {
+				deps.log(`ambiguous "${query}": candidates: ${results.slice(0, 3).map(candidateSummary).join('; ')}`);
+				return null;
+			}
+			return pick.id != null ? { comicvine_id: String(pick.id) } : null;
 		} catch (e) {
 			deps.log(`comic resolve failed for "${query}": ${String(e)}`);
 			return null;

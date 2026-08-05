@@ -329,6 +329,19 @@ describe('gameSpec.resolve', () => {
 		expect(result).toBeNull();
 		expect(deps.logCalls.some(m => m.includes('RAWG'))).toBe(true);
 	});
+	test('steam storesearch ambiguous -> logs top candidates with appid + name', async () => {
+		const deps = makeDeps({
+			http: async () => ({
+				items: [
+					{ id: 1, name: 'Foo' },
+					{ id: 2, name: 'Bar' },
+				],
+			}),
+		});
+		const result = await gameSpec.resolve(ctxFor({ title: '7 Billion Humans' }), deps);
+		expect(result).toBeNull();
+		expect(deps.logCalls.some(m => m.includes('ambiguous') && m.includes('appid=1') && m.includes('Foo') && m.includes('appid=2') && m.includes('Bar'))).toBe(true);
+	});
 
 	test('steam storesearch throws -> falls through to RAWG', async () => {
 		const deps = makeDeps({

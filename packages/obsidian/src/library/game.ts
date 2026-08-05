@@ -168,6 +168,11 @@ function pickUniqueExact<T>(items: T[], query: string, titleOf: (t: T) => string
 	return null;
 }
 
+/** Top-candidate identifying info for ambiguous-resolve logging. */
+function candidateSummary(label: string, id: unknown, name: string, year?: string): string {
+	return `${label}=${id ?? ''} «${name}»${year ? ` (${year})` : ''}`;
+}
+
 async function fetchSteamSearch(query: string, deps: SpecDeps): Promise<any[]> {
 	const qs = new URLSearchParams({ term: query, cc: 'us', l: 'en' });
 	const res = await deps.http(`${STEAM_STORE_BASE}/api/storesearch/?${qs.toString()}`, {});
@@ -213,6 +218,9 @@ export const gameSpec: MediaTypeSpec = {
 			const items = await fetchSteamSearch(query, deps);
 			const pick = pickUniqueExact(items, query, (it: any) => String(it.name ?? ''));
 			if (pick) return { steam_appid: String(pick.id) };
+			if (items.length > 0) {
+				deps.log(`ambiguous "${query}": candidates: ${items.slice(0, 3).map((it: any) => candidateSummary('appid', it.id, it.name ?? '')).join('; ')}`);
+			}
 		} catch (e) {
 			deps.log(`game steam storesearch failed for "${query}": ${String(e)}`);
 		}
@@ -226,6 +234,10 @@ export const gameSpec: MediaTypeSpec = {
 			const results = await fetchRawgSearch(query, key, deps);
 			const pick = pickUniqueExact(results, query, (it: any) => String(it.name ?? ''));
 			if (pick) return { rawg_id: String(pick.id) };
+			if (results.length > 0) {
+				const year = (it: any) => (typeof it.released === 'string' ? it.released.slice(0, 4) : '');
+				deps.log(`ambiguous "${query}": candidates: ${results.slice(0, 3).map((it: any) => candidateSummary('rawg_id', it.id, it.name ?? '', year(it))).join('; ')}`);
+			}
 		} catch (e) {
 			deps.log(`game rawg search failed for "${query}": ${String(e)}`);
 		}
