@@ -62,7 +62,12 @@ export async function libraryFolderSync(spec: MediaTypeSpec, deps: LibraryEngine
 			const filename = filenameOf(note.path);
 			if (isSkippableNote(filename, frontmatter, spec.itemType)) continue;
 			if (!spec.hasId(frontmatter)) {
-				report.skippedNoId++;
+				// no_resolve opt-outs are deliberate manual notes — keep them out of the actionable no-id count
+				if (hasNoResolveFlag(frontmatter)) {
+					deps.log(`no_resolve flag set, skipping sync: ${note.path}`);
+				} else {
+					report.skippedNoId++;
+				}
 				continue;
 			}
 			if (!opts.full && !spec.isActive(frontmatter)) {

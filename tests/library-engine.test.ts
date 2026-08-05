@@ -439,4 +439,18 @@ describe('libraryFolderResolve: no_resolve flag', () => {
 		expect(report.skippedNoResolve).toBe(0);
 		expect(report.resolved).toEqual(['A.md']);
 	});
+
+	test('SYNC: no_resolve id-less note excluded from skippedNoId (silent log skip); plain id-less note still counted', async () => {
+		const { spec } = makeFakeSpec({});
+		const flagged = NO_ID_NOTE.replace('fake_id: ', 'fake_id: \nno_resolve: true');
+		const logs: string[] = [];
+		const { deps } = makeDeps([
+			{ path: 'Flagged.md', content: flagged },
+			{ path: 'Plain.md', content: NO_ID_NOTE },
+		]);
+		deps.log = (m: string) => logs.push(m);
+		const report = await libraryFolderSync(spec, deps, { full: true });
+		expect(report.skippedNoId).toBe(1);
+		expect(logs.some(l => l.includes('no_resolve flag set, skipping sync: Flagged.md'))).toBe(true);
+	});
 });
