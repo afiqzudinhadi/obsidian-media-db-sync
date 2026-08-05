@@ -185,45 +185,45 @@ export default class MediaDbPlugin extends Plugin {
 		this.addCommand({
 			id: 'watchlist-sync-now',
 			name: 'Watchlist: sync now (airing/active only)',
-			callback: () => void this.watchlist.syncNow(false).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e))),
+			callback: () => void this.watchlist.syncNow(false).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e), 0)),
 		});
 		this.addCommand({
 			id: 'watchlist-sync-full',
 			name: 'Watchlist: full sync (all entries)',
-			callback: () => void this.watchlist.syncNow(true).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e))),
+			callback: () => void this.watchlist.syncNow(true).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e), 0)),
 		});
 		this.addCommand({
 			id: 'watchlist-sync-dry-run',
 			name: 'Watchlist: dry-run full sync (log only, no writes)',
-			callback: () => void this.watchlist.syncNow(true, true).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e))),
+			callback: () => void this.watchlist.syncNow(true, true).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e), 0)),
 		});
 		this.addCommand({
 			id: 'watchlist-resolve-ids',
 			name: 'Watchlist: resolve missing TMDB ids',
-			callback: () => void this.watchlist.resolveMissingIds().catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e))),
+			callback: () => void this.watchlist.resolveMissingIds().catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e), 0)),
 		});
 
 		for (const { spec, slug } of LIBRARY_TYPES) {
 			this.addCommand({
 				id: `library-sync-${slug}`,
 				name: `Library: sync ${slug} now`,
-				callback: () => void this.library.syncType(spec, false).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e))),
+				callback: () => void this.library.syncType(spec, false).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e), 0)),
 			});
 			this.addCommand({
 				id: `library-resolve-${slug}`,
 				name: `Library: resolve ${slug} ids`,
-				callback: () => void this.library.resolveType(spec).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e))),
+				callback: () => void this.library.resolveType(spec).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e), 0)),
 			});
 			this.addCommand({
 				id: `library-dry-run-${slug}`,
 				name: `Library: dry-run ${slug} full sync`,
-				callback: () => void this.library.syncType(spec, true, true).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e))),
+				callback: () => void this.library.syncType(spec, true, true).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e), 0)),
 			});
 		}
 		this.addCommand({
 			id: 'library-sync-all',
 			name: 'Library: sync all',
-			callback: () => void this.library.syncAll(false).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e))),
+			callback: () => void this.library.syncAll(false).catch((e: unknown) => new Notice(e instanceof Error ? e.message : String(e), 0)),
 		});
 	}
 

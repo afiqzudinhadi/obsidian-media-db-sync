@@ -43,8 +43,8 @@ export class LibraryController {
 
 	constructor(private plugin: MediaDbPlugin) {}
 
-	private notify(msg: string): void {
-		new Notice(msg);
+	private notify(msg: string, timeout?: number): void {
+		new Notice(msg, timeout);
 	}
 
 	private getKey(name: 'rawg' | 'comicvine'): string {
@@ -142,7 +142,7 @@ export class LibraryController {
 		if (quiet) {
 			console.log(`[media-db-library] ${msg}`);
 		} else {
-			this.notify(msg);
+			this.notify(msg, 0);
 		}
 	}
 
@@ -155,6 +155,7 @@ export class LibraryController {
 			this.notify(
 				`Library ${mode}sync (${spec.typeName}): ${report.synced} checked, ${report.written} updated, ${report.flipped.length} flipped` +
 					(report.errors.length ? `, ${report.errors.length} errors (see console)` : ''),
+				0,
 			);
 		}
 		return report;
@@ -186,6 +187,7 @@ export class LibraryController {
 			this.notify(
 				`Library ${mode}resolve (${spec.typeName}): ${report.resolved.length} resolved, ${report.ambiguous.length} ambiguous/no match` +
 					(report.errors.length ? `, ${report.errors.length} errors (see console)` : ''),
+				0,
 			);
 			return report;
 		} finally {
@@ -209,7 +211,7 @@ export class LibraryController {
 					// rest of the run -- log + surface it, then keep going with the other types
 					const msg = `Library sync failed for ${spec.typeName}: ${e instanceof Error ? e.message : String(e)}`;
 					console.log(`[media-db-library] ${msg}`);
-					if (!quiet) this.notify(msg);
+					if (!quiet) this.notify(msg, 0);
 				}
 			}
 			if (!full) {

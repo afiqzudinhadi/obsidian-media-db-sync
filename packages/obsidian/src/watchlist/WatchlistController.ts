@@ -83,6 +83,7 @@ export class WatchlistController {
 				new Notice(
 					`Watchlist ${mode}sync: ${report.synced} checked, ${report.written} updated, ${report.flipped.length} flipped to Unwatched` +
 						(report.errors.length ? `, ${report.errors.length} errors (see console)` : ''),
+					0,
 				);
 			}
 			if (!dryRun) {
@@ -147,6 +148,7 @@ export class WatchlistController {
 			new Notice(
 				`Watchlist ${mode}resolve: ${report.scanned} scanned, ${report.resolved} resolved, ${report.ambiguous} ambiguous/no match` +
 					(report.errors.length ? `, ${report.errors.length} errors (see console)` : ''),
+				0,
 			);
 			return report;
 		} finally {
