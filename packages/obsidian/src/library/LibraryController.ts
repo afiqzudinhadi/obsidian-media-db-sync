@@ -233,10 +233,16 @@ export class LibraryController {
 						skipped++;
 						continue;
 					}
-					const content = await deps.readNote(entry.path);
-					await deps.writeNote(entry.path, patchFrontmatter(content, candidate.patches, { defaultType: spec.itemType }));
-					report.resolved.push(entry.path);
-					picked++;
+					try {
+						const content = await deps.readNote(entry.path);
+						await deps.writeNote(entry.path, patchFrontmatter(content, candidate.patches, { defaultType: spec.itemType }));
+						report.resolved.push(entry.path);
+						picked++;
+					} catch (e) {
+						const msg = e instanceof Error ? e.message : String(e);
+						console.log(`[media-db-library] picker failed for ${entry.filename}: ${msg}`);
+						skipped++;
+					}
 				}
 			}
 
