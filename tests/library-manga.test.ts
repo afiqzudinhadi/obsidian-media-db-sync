@@ -920,6 +920,19 @@ describe('mangaSpec.resolve — AniList primary', () => {
 		expect(result).toEqual({ mal_id: '116778', anilist_id: '105778' });
 		expect(mangadexCalled).toBe(false);
 	});
+
+	test('search query includes format_not_in: [NOVEL] to exclude light novels', async () => {
+		let capturedQuery = '';
+		const deps = makeDeps({
+			http: async () => ({ data: [] }),
+			httpPostJson: async (url: string, body: any) => {
+				capturedQuery = body.query;
+				return anilistPage([{ id: 105778, idMal: 116778, title: { romaji: 'Overlord', english: 'Overlord' } }]);
+			},
+		});
+		await mangaSpec.resolve(ctxFor({ title: 'Overlord' }, ''), deps);
+		expect(capturedQuery).toContain('format_not_in: [NOVEL]');
+	});
 });
 
 describe('mangaSpec.sync — AniList primary enrich', () => {

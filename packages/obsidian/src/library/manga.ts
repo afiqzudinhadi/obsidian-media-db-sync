@@ -33,7 +33,7 @@ const ANILIST_MEDIA_FIELDS = `
 
 const ANILIST_SEARCH_QUERY = `query ($q: String) {
 	Page(perPage: 8) {
-		media(search: $q, type: MANGA) {
+		media(search: $q, type: MANGA, format_not_in: [NOVEL]) {
 			${ANILIST_MEDIA_FIELDS}
 		}
 	}
