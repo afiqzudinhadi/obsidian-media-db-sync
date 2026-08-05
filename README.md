@@ -1,199 +1,330 @@
-## Obsidian Media DB Plugin
+# Media DB Sync
 
-A plugin that can query multiple APIs for movies, series, anime, manga, books, comics, games, music, and wiki articles, and import them into your vault.
+An Obsidian plugin that fills in media metadata, re-syncs it on a schedule, and flips a series back to `Unwatched` when a new episode airs. Fork of [Media DB](https://github.com/mProjectsCode/obsidian-media-db-plugin) by Moritz Jung.
 
-> [!WARNING]
-> Please make sure you are looking at the README on the [release branch](https://github.com/mProjectsCode/obsidian-media-db-plugin/blob/release/README.md).
-> The README on the master branch refers to the current in-development version of the plugin.
+The stock plugin writes a note once, at import time, and never touches it again. This fork adds the part that runs afterwards.
 
-### Features
+# Table of Contents
 
-#### Search by Title
+- [Media DB Sync](#media-db-sync)
+- [Table of Contents](#table-of-contents)
+- [What This Fork Adds](#what-this-fork-adds)
+- [Plugin Info](#plugin-info)
+- [Watchlist Notes](#watchlist-notes)
+    - [Frontmatter written on every sync](#frontmatter-written-on-every-sync)
+    - [Fields the sync never overwrites](#fields-the-sync-never-overwrites)
+    - [Which notes get synced](#which-notes-get-synced)
+    - [The watch-status rule](#the-watch-status-rule)
+    - [Anime detection](#anime-detection)
+- [Library Types](#library-types)
+- [Commands](#commands)
+- [Settings](#settings)
+- [Related Articles](#related-articles)
+- [Pre-requisites](#pre-requisites)
+- [Clone Repository](#clone-repository)
+- [Set Up Build Environment](#set-up-build-environment)
+    - [1. Install Bun](#1-install-bun)
+    - [2. Install Dependencies](#2-install-dependencies)
+    - [3. Build](#3-build)
+    - [4. Run the Checks](#4-run-the-checks)
+- [Install Into Obsidian](#install-into-obsidian)
+    - [Option A: BRAT](#option-a-brat)
+    - [Option B: Copy the Build](#option-b-copy-the-build)
+    - [Configure](#configure)
+- [Development](#development)
+    - [Live Build Into a Test Vault](#live-build-into-a-test-vault)
+    - [Tests](#tests)
+- [Issues](#issues)
+    - [TMDB API key not configured](#tmdb-api-key-not-configured)
+    - [Watchlist sync already running](#watchlist-sync-already-running)
+    - [Notes skipped for having no id](#notes-skipped-for-having-no-id)
+    - [TMDB works in Obsidian but not from a script](#tmdb-works-in-obsidian-but-not-from-a-script)
+- [License and Credit](#license-and-credit)
 
-Search for movies, series, anime, manga, books, comics, games, music releases, or wiki articles by their name across multiple APIs.
+# What This Fork Adds
 
-#### Search by ID
+| Capability                                                                    | Stock Media DB                  | This fork                                        |
+| ----------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------ |
+| Import a title from an API                                                    | Yes                             | Yes, unchanged                                   |
+| Re-sync an existing note later                                                | Manual, one note at a time      | Scheduled, across the whole folder               |
+| `language`, `country`, `imdb_id`, `content_rating`, `trailer`, `homepage`     | Left blank on TMDB imports      | Filled                                           |
+| `producer`                                                                    | Writes `studio` instead         | Individual producers                             |
+| Episode tracking                                                              | No                              | `last_episode`, `upcoming_episode`, `next_air_date` |
+| Watch-status automation                                                       | No                              | `Watched` flips to `Unwatched` on a new episode  |
+| Backfilling ids onto notes that predate the plugin                            | No                              | `Watchlist: resolve missing TMDB ids`            |
+| Manga, book, game, comic upkeep                                               | Import only                     | Scheduled sync per type                          |
 
-Allows you to search by an ID that varies from API to API. Concrete information on this feature can be found in the description of the individual APIs.
+# Plugin Info
 
-#### Templates
+| Property                  | Value                                                                                     |
+| ------------------------- | ----------------------------------------------------------------------------------------- |
+| Plugin ID                 | `media-db-sync`                                                                           |
+| Display name              | Media DB Sync                                                                             |
+| Minimum Obsidian version  | 1.12.0                                                                                    |
+| Desktop only              | No, runs on mobile                                                                        |
+| License                   | GPL-3.0                                                                                   |
+| Upstream                  | [mProjectsCode/obsidian-media-db-plugin](https://github.com/mProjectsCode/obsidian-media-db-plugin) |
+| Toolchain                 | Bun + Vite                                                                                |
+| Build output              | `dist/main.js`, `dist/manifest.json`, `dist/styles.css`                                   |
+| Network calls             | Obsidian `requestUrl()` only, never node `fetch`                                          |
 
-The plugin allows you to set a template note that gets added to the end of any note created by this plugin.  
-The plugin also offers simple template tags, for example `{{ title }}`, which will be replaced by the title of the media being imported.  
-Note that template tags are surrounded by two curly braces and spaces. The spaces inside the curly braces are important!
+# Watchlist Notes
 
-For arrays, there are two special ways of displaying them:
+A watchlist note is one markdown file per title, carrying `type: watchlist_item` in its frontmatter. Everything the sync reads and writes lives in that frontmatter; the body holds the rendered sections.
 
-- using `{{ LIST:variable_name }}` will result in:
-    ```
-      - element 1
-      - element 2
-      - element 3
-      - ...
-    ```
-- using `{{ ENUM:variable_name }}` will result in:
-    ```
-      element 1, element 2, element 3, ...
-    ```
-
-Available variables that can be used in template tags are any front-matter properties.
-
-I also published my own templates [here](https://github.com/mProjectsCode/obsidian-media-db-templates).
-
-#### Download poster images
-
-The plugin offers a setting to automatically download the poster images for a new media, ensuring offline access. The images are saved as `type_title (year)` e.g. `movie_The Perfect Storm (2000)`, in a user-chosen folder.
-
-#### Metadata field customization
-
-Allows you to rename the metadata fields this plugin generates through mappings. The mappings can be set in the plugin's settings.
-The three options for mapping are:
-
-- `default`: Keep the original name
-- `remap`: Rename the property
-- `remove`: Removes the property entirely
-
-#### Bulk Import
-
-The plugin allows you to import your preexisting media collection and upgrade it to Media DB entries.
-
-##### Prerequisites
-
-The preexisting media notes must be inside a folder in your vault.
-For the plugin to be able to query them, they need one metadata field that is used as the title the piece of media is searched by.
-This can be achieved by, for example, using a `csv` import plugin to import an existing list from outside of Obsidian.
-
-##### Importing
-
-To start the import process, right-click on the folder and select the `Import folder as Media DB entries` option.
-Then specify the API to search, if the current note content and metadata should be appended to the Media DB entry, and the name of the metadata field that contains the title of the piece of media.
-
-Then the plugin will go through every file in the folder and prompt you to select from the search results.
-
-##### Post import
-
-After all files have been imported or the import was canceled, you will find the new entries as well as an error report that contains any errors or skipped/canceled files in the folder specified in the setting of the plugin.
-
-### How to install
-
-**The plugin is now released, so it can be installed directly through Obsidian's plugin installer.**
-
-Alternatively, you can manually download the zip archive from the latest release here on GitHub.  
-After downloading, extract the archive into the `.obsidian/plugins` folder in your vault.
-
-The folder structure should look like this:
+### Frontmatter written on every sync
 
 ```
-[path to your vault]
-|_ .obsidian
-   |_ plugins
-      |_ obsidian-media-db-plugin
-         |_ main.js
-         |_ manifest.json
-         |_ styles.css
+title            engName          media_type       category
+watch_status     rating           rating_stars     year
+runtime          seasons          episodes         vod
+genre            status           language         country
+director         writer           producer         content_rating
+tmdb_rating      tmdb_id          imdb_id          release_date
+last_air_date    next_air_date    last_episode     upcoming_episode
+poster           trailer          homepage         imdb_page
+notion_url       synopsis         cast
 ```
 
-### How to use
+`media_type` is `Movie` or `TV Series`. `category` is `Movie`, `Series`, or `Anime`.
 
-Once you have installed this plugin, you will find a database icon in the left ribbon.  
-When using this or the `Add new Media DB entry` command, a pop-up will open.  
-Here, you can enter the title of what you want to search for and then select which APIs to search.
+Body sections owned by the renderer: `## Synopsis`, `## Cast`, `## Links`, `## My Notes`.
 
-After clicking search, a new pop-up will open, prompting you to select from the search results.  
-Now you select the result you want, and the plugin will cast its magic, creating a new note in your vault that contains the metadata of the selected search result.
+### Fields the sync never overwrites
 
-### Currently supported media types
+```
+watch_status     kept, except for the episode rule below
+rating           kept
+rating_stars     kept
+notion_url       kept
+## My Notes      body text under this heading is carried across verbatim
+```
 
-- movies (including specials)
-- series (including OVAs)
-- videogames
-- boardgames
-- music releases
-- wiki articles
-- books
-- manga
-- comics
+A note with no `watch_status` yet starts at `Unwatched`.
 
-### Currently supported APIs:
+### Which notes get synced
 
-| Name                                                 | Description                                                                                       | Supported formats                                     | Authentification                                                                                                                                                                 | Rate limiting                                                                                                                                                                              | SFW filter support |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
-| [Jikan](https://jikan.moe/)                          | Jikan is an API that uses [My Anime List](https://myanimelist.net) and offers metadata for anime. | series, movies, specials, OVAs, manga, manwha, novels | No                                                                                                                                                                               | 60 per minute and 3 per second                                                                                                                                                             | Yes                |
-| [OMDb](https://www.omdbapi.com/)                     | OMDb is an API that offers metadata for movies, series, and games.                                | series, movies, games                                 | Yes, you can get a free key here [here](https://www.omdbapi.com/apikey.aspx)                                                                                                     | 1000 per day                                                                                                                                                                               | No                 |
-| [TMDB](https://www.themoviedb.org/)                  | TMDB is a API that offers community editable metadata for movies and series.                      | series, movies                                        | Yes, by making an account [here](https://www.themoviedb.org/signup) and getting your `API Read Access Token` (**not** `API Key`) [here](https://www.themoviedb.org/settings/api) | 50 per second                                                                                                                                                                              | Yes                |
-| [MusicBrainz](https://musicbrainz.org/)              | MusicBrainz is an API that offers information about music releases.                               | music releases                                        | No                                                                                                                                                                               | 50 per second                                                                                                                                                                              | No                 |
-| [Wikipedia](https://en.wikipedia.org/wiki/Main_Page) | The Wikipedia API allows access to all Wikipedia articles.                                        | wiki articles                                         | No                                                                                                                                                                               | None                                                                                                                                                                                       | No                 |
-| [Steam](https://store.steampowered.com/)             | The Steam API offers information on all Steam games.                                              | games                                                 | No                                                                                                                                                                               | 10000 per day                                                                                                                                                                              | No                 |
-| [Open Library](https://openlibrary.org)              | The OpenLibrary API offers metadata for books                                                     | books                                                 | No                                                                                                                                                                               | Cover access is rate-limited when not using CoverID or OLID by max 100 requests/IP every 5 minutes. This plugin uses OLID, so there shouldn't be a rate limit.                             | No                 |
-| Comic Vine                                           | The Comic Vine API offers metadata for comic books                                                | comicbooks                                            | Yes, by making an account [here](https://comicvine.gamespot.com/login-signup/) and going to the [api section](https://comicvine.gamespot.com/api/) of the site                   | 200 requests per resource, per hour. There is also a velocity detection to prevent malicious use. If too many requests are made per second, you may receive temporary blocks to resources. | No                 |
-| [VNDB](https://vndb.org/)                            | The VNDB API offers metadata for visual novels                                                    | games                                                 | No                                                                                                                                                                               | 200 requests per 5 minutes                                                                                                                                                                 | Yes                |
-| [Boardgame Geek](https://boardgamegeek.com)          | The Boardgame Geek API offers metadata for boardgames                                             | boardgames                                            | Yes, by making an account [here](https://boardgamegeek.com/join/) and then [requesting an application token](https://boardgamegeek.com/applications)                             | Exact usage limits are still undetermined                                                                                                                                                  | No                 |
+`Watchlist: sync now` skips anything inactive, so a daily run costs a handful of requests instead of one per note. A note counts as active when either of these holds:
 
-#### Notes
+```
+status        is one of: Returning Series, In Production, Planned, Pilot
+watch_status  is Watching
+```
 
-- [Jikan](https://jikan.moe/)
-    - sometimes the api is very slow; this is normal
-    - you need to use the title the anime has on [My Anime List](https://myanimelist.net), which is in most cases the Japanese title
-        - e.g. instead of "Demon Slayer" you have to search "Kimetsu no Yaiba"
-- Support for the [Moby Games](https://www.mobygames.com) API has been removed from the plugins as the API is no longer free to use.
-- Support for the [Giant Bomb](https://www.giantbomb.com) API has been removed from the plugin temporarily as their API is [currently non functional](https://giantbomb.com/api).
+Everything else is only touched by `Watchlist: full sync`. Requests are spaced 250 ms apart by default.
 
-#### Search by ID
+### The watch-status rule
 
-- [Jikan](https://jikan.moe/)
-    - the ID you need is the ID of the anime on [My Anime List](https://myanimelist.net)
-    - you can find this ID in the URL
-        - e.g. for "Beyond the Boundary" the URL looks like this `https://myanimelist.net/anime/18153/Kyoukai_no_Kanata` so the ID is `18153`
-- [Jikan Manga](https://jikan.moe/)
-    - the ID you need is the ID of the manga on [My Anime List](https://myanimelist.net)
-    - you can find this ID in the URL
-        - e.g. for "All You Need Is Kill" the URL looks like this `https://myanimelist.net/manga/62887/All_You_Need_Is_Kill` so the ID is `62887`
-- [OMDb](https://www.omdbapi.com/)
-    - the ID you need is the ID of the movie or show on [IMDb](https://www.imdb.com)
-    - you can find this ID in the URL
-        - e.g. for "Rogue One" the URL looks like this `https://www.imdb.com/title/tt3748528/` so the ID is `tt3748528`
-- [TMDB](https://www.themoviedb.org/)
-    - the ID you need is the numeric value in the URL directly following `/movie/` or `/tv/`
-        - e.g. for "Stargate" the URL looks like this `https://www.themoviedb.org/movie/2164-stargate` so the ID is `2164`
-    - When searching by ID you need to select `TMDBSeriesAPI`, `TMDBSeasonAPI`, or `TMDBMovieAPI` for series, seasons, and movies respectively.
-    - Season ID searches use the format `<series_id>/season/<season_number>` - season 1 of The Expanse expects `63639/season/1`
-- [MusicBrainz](https://musicbrainz.org/)
-    - the id of a release is not easily accessible; you are better off just searching by title
-    - the search is generally for albums but you can have a more granular search like so:
-        - search for albums by a specific `artist:"Lady Gaga" AND primarytype:"album"`
-        - search for a specific album by a specific artist `artist:"Lady Gaga" AND primarytype:"album" AND releasegroup:"The Fame"`
-        - search for a specific entry (song or album) by a specific `artist:"Lady Gaga" AND releasegroup:"Poker face"`
-- [Wikipedia](https://en.wikipedia.org/wiki/Main_Page)
-    - [here](https://en.wikipedia.org/wiki/Wikipedia:Finding_a_Wikidata_ID) is a guide to finding the Wikipedia ID for an article
-- [Steam](https://store.steampowered.com/)
-    - you can find this ID in the URL
-        - e.g. for "Factorio" the URL looks like this `https://store.steampowered.com/app/427520/Factorio/` so the ID is `427520`
-- [Open Library](https://openlibrary.org)
-    - The ID can either be the "/work/" ID, the "/book/" ID, or the "/isbn/" ID it needs to start with `/works/`. You can find this ID in the URL
-        - e.g. for "Fantastic Mr. Fox" the "/works/" URL looks like this `https://openlibrary.org/works/OL45804W` so the ID is `/works/OL45804W`
-            - This URL is located near the top of the page above the title, see `An edition of Fantastic Mr Fox (1970) `
-        - For a specific edition of "Fantastic Mr. Fox" the "/books/" URL looks like this `https://openlibrary.org/books/OL3567303M/` so the ID is `/books/OL3567303M`
-            - This URL is located in the editions section`
-- [Comic Vine](https://www.comicvine.gamespot.com)
-    - you can find this ID in the URL
-        - e.g. for "Boule & Bill" the URL looks like this `https://comicvine.gamespot.com/boule-bill/4050-70187/` so the ID is `4050-70187`
-        - Please note that only volumes can be added, not separate issues.
-- [VNDB](https://vndb.org/)
-    - Located in the novel's VNDB URL path
-        - e.g. The ID for [Katawa Shoujo](https://vndb.org/v945) (`https://vndb.org/v945`) is `v945`
+```
+if media is a TV series
+and watch_status == "Watched"
+and TMDB's last_air_date is newer than the last_air_date stored in the note
+then watch_status -> "Unwatched"
+```
 
-### Problems, unexpected behavior, or improvement suggestions?
+That is the whole rule. A movie you marked `Watched` stays `Watched`, because a movie has no `last_air_date` that can move.
 
-You are more than welcome to open an issue on [GitHub](https://github.com/mProjectsCode/obsidian-media-db-plugin/issues).
+### Anime detection
 
-### Contributions
+```
+genre contains "Animation"  AND  language == "Japanese"   ->  category: Anime
+otherwise, if it is a movie                               ->  category: Movie
+otherwise                                                 ->  category: Series
+```
 
-Thank you for wanting to contribute to this project.
+This is why the blank `language` field on stock TMDB imports matters. Without it, every anime lands in `Series`.
 
-Contributions are always welcome. If you have an idea, feel free to open a feature request under the issue tab or even create a pull request.
+# Library Types
 
-### Credits
+Each type is a separate folder with its own toggle. All four run on the watchlist's sync interval.
 
-Credits go to:
+| Type  | Default folder | Data sources                                                  | API key needed |
+| ----- | -------------- | ------------------------------------------------------------- | -------------- |
+| Manga | `Mangas`       | Jikan (MyAnimeList), AniList, MangaDex RSS for chapter counts | None           |
+| Book  | `Books`        | Open Library                                                  | None           |
+| Game  | `Games`        | Steam store, RAWG                                             | RAWG           |
+| Comic | `Comics`       | Comic Vine                                                    | Comic Vine     |
 
-- https://github.com/anpigon/obsidian-book-search-plugin for some inspiration and the idea to make this plugin
+When a resolve pass turns up several plausible matches for one note, it opens a picker instead of guessing. The picker offers `Never resolve (mark no_resolve)`; a note with `no_resolve: true` is skipped by every future resolve pass and left out of the "missing id" count.
+
+Notes that resolve to nothing still get converted into the canonical shape locally, with no API calls, so they appear in Bases views rather than staying invisible.
+
+# Commands
+
+Inherited from upstream, unchanged:
+
+| Command                                          |
+| ------------------------------------------------ |
+| Create entry                                     |
+| Create entry (per media type)                    |
+| Create entry (advanced search)                   |
+| Create entry by id                               |
+| Update open note (this will recreate the note)   |
+| Update metadata                                  |
+| Insert link                                      |
+
+Added here:
+
+| Command                                                | What it does                                                    |
+| ------------------------------------------------------ | --------------------------------------------------------------- |
+| `Watchlist: sync now (airing/active only)`             | Syncs active notes only                                         |
+| `Watchlist: full sync (all entries)`                   | Syncs every note in the folder                                  |
+| `Watchlist: dry-run full sync (log only, no writes)`   | Walks the full sync and logs the diff without writing           |
+| `Watchlist: resolve missing TMDB ids`                  | Searches TMDB for notes that have no `tmdb_id`                  |
+| `Library: sync <type> now`                             | One type                                                        |
+| `Library: resolve <type> ids`                          | Backfills ids for one type                                      |
+| `Library: dry-run <type> full sync`                    | Log only                                                        |
+| `Library: sync all`                                    | Every enabled type                                              |
+
+Run the dry-run against a real folder before the first live sync. If the vault is under git, commit it first.
+
+# Settings
+
+Under **Watchlist sync**:
+
+| Setting                | Default     | Notes            |
+| ---------------------- | ----------- | ---------------- |
+| Enable watchlist sync  | Off         |                  |
+| Watchlist folder       | `Watchlist` |                  |
+| Sync interval (hours)  | `24`        | Accepts 1 to 168 |
+
+Under **Library sync**, per type: an enable toggle and a folder path.
+
+The scheduler is catch-up based rather than a wall-clock timer. On load it checks whether `lastSync + interval` is already in the past and runs if so, so a laptop that was asleep at the scheduled hour still syncs when it wakes.
+
+API keys are held in the Obsidian keychain, not in `data.json`. TMDB takes either credential: a token starting with `eyJ` is sent as `Authorization: Bearer`, anything else is sent as `?api_key=`.
+
+# Related Articles
+
+- [Upstream Media DB README](https://github.com/mProjectsCode/obsidian-media-db-plugin/blob/master/README.md), for the import features, templates, property mappings, and the per-API "search by ID" reference
+- [TMDB API docs](https://developer.themoviedb.org/reference/intro/getting-started)
+- [BRAT](https://github.com/TfTHacker/obsidian42-brat), for installing a plugin straight from a repo
+- [Obsidian Bases](https://help.obsidian.md/bases), which is what the `watchlist_item` shape is written for
+
+# Pre-requisites
+
+- Obsidian 1.12.0 or newer
+- A TMDB API key or read access token, from [your TMDB API settings](https://www.themoviedb.org/settings/api)
+- [Bun](https://bun.sh/) 1.x, if you are building from source
+- Git
+
+# Clone Repository
+
+```bash
+git clone git@github.com:afiqzudinhadi/obsidian-media-db-sync.git
+cd obsidian-media-db-sync
+```
+
+The upstream remote is kept, so changes from Moritz Jung's plugin can be pulled in:
+
+```bash
+git fetch upstream
+```
+
+# Set Up Build Environment
+
+### 1. Install Bun
+
+```bash
+curl -fsSL https://bun.sh/install | bash
+```
+
+This project uses Bun and Vite. It does not use npm or esbuild; older notes that say otherwise are stale.
+
+### 2. Install Dependencies
+
+```bash
+bun install
+```
+
+### 3. Build
+
+```bash
+bun run build
+```
+
+Type-checks first, then writes `main.js`, `manifest.json`, and `styles.css` into `dist/`.
+
+### 4. Run the Checks
+
+```bash
+bun run check
+```
+
+Formatter check, both type-check passes, ESLint at zero warnings, then the test suite.
+
+# Install Into Obsidian
+
+### Option A: BRAT
+
+Install BRAT, then add `afiqzudinhadi/obsidian-media-db-sync` as a beta plugin. BRAT reads `manifest-beta.json` and updates from releases.
+
+### Option B: Copy the Build
+
+```bash
+mkdir -p /path/to/vault/.obsidian/plugins/media-db-sync
+cp dist/main.js dist/manifest.json dist/styles.css /path/to/vault/.obsidian/plugins/media-db-sync/
+```
+
+Reload Obsidian, then enable **Media DB Sync** under Settings, Community plugins.
+
+The plugin id is `media-db-sync`, not `obsidian-media-db`, so this installs alongside the stock plugin and neither one overwrites the other's folder or `data.json`.
+
+### Configure
+
+1. Paste the TMDB key into Settings, Media DB Sync.
+2. Turn on **Enable watchlist sync** and set the folder.
+3. Run `Watchlist: dry-run full sync` and read the console output.
+4. If the diff looks right, run `Watchlist: full sync`.
+
+# Development
+
+### Live Build Into a Test Vault
+
+```bash
+bun run dev
+```
+
+In development mode the output goes to `exampleVault/.obsidian/plugins/media-db-sync/` instead of `dist/`, and rebuilds on save.
+
+### Tests
+
+```bash
+bun test --preload ./tests/setup.ts
+```
+
+Use `bun run test:log` to see the sync engine's log lines. The suite covers the serializer, YAML quoting, the diff-on-write path, the candidate picker loop, and the watch-status rule.
+
+# Issues
+
+### TMDB API key not configured
+
+```
+TMDB API key not configured (Media DB Sync settings).
+```
+
+The key sits in the Obsidian keychain, not in `data.json`, so it does not travel with a synced vault. Enter it again on each device.
+
+### Watchlist sync already running
+
+```
+Watchlist sync already running
+```
+
+A sync is in progress. Both a manual command and the scheduler can start one, and the second caller is turned away rather than allowed to write over the first. Wait for it to finish. The library sync reports the same way with `Library sync already running`.
+
+### Notes skipped for having no id
+
+The sync report counts notes it could not act on because they carry no `tmdb_id`. Anything imported before this plugin existed will be in that group. Run `Watchlist: resolve missing TMDB ids`, then sync again. Notes marked `no_resolve: true` are deliberate opt-outs and are excluded from the count.
+
+### TMDB works in Obsidian but not from a script
+
+```
+nodename nor servname provided, or not known
+```
+
+Some ISP DNS resolvers return nothing for TMDB's API host, which breaks `curl` and any Python or Node script on that connection. Obsidian's `requestUrl()` goes through Chromium's network stack and resolves it fine. That is why every network call here goes through `requestUrl()`, and why an external cron script is not a working substitute on such a connection.
+
+# License and Credit
+
+GPL-3.0, inherited from upstream. The import pipeline, API adapters, modals, and property mapping are Moritz Jung's work: see [mProjectsCode/obsidian-media-db-plugin](https://github.com/mProjectsCode/obsidian-media-db-plugin). The sync engine, watchlist schema, library specs, and resolve flow are added in this fork.
