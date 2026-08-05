@@ -554,6 +554,39 @@ describe('resolveType: interactive candidate picker (needsChoice)', () => {
 		expect(notices[0]).toContain('0 picked, 0 skipped'); // dry-run never picks/skips; needsChoice.length is still visible on the report
 	});
 
+	test('per-entry failure isolated: first entry readNote throws in picker phase, second still picked', async () => {
+		const c = new LibraryController(fakePlugin());
+		const notices: string[] = [];
+		(c as any).notify = (msg: string) => notices.push(msg);
+		const logs: string[] = [];
+		const writes: { path: string; content: string }[] = [];
+		const readCounts: Record<string, number> = {};
+		(c as any).makeDeps = () => ({
+			listNotes: async () => [{ path: 'Mangas/Bad.md' }, { path: 'Mangas/Good.md' }],
+			readNote: async (path: string) => {
+				readCounts[path] = (readCounts[path] ?? 0) + 1;
+				// engine resolve pass reads once; picker phase read is the second call
+				if (path === 'Mangas/Bad.md' && readCounts[path] > 1) throw new Error('note vanished');
+				return '---\ntype: manga_item\ntitle: X\n---\n\nbody\n';
+			},
+			writeNote: async (path: string, content: string) => {
+				writes.push({ path, content });
+			},
+			sleep: async () => {},
+			log: (m: string) => logs.push(m),
+			specDeps: fakeSpecDeps(),
+		});
+		(c as any).pickCandidate = async () => 0;
+
+		const report = await c.resolveType(candidateSpec);
+
+		expect(writes.length).toBe(1);
+		expect(writes[0].path).toBe('Mangas/Good.md');
+		expect(report.resolved).toEqual(['Mangas/Good.md']);
+		expect(logs.some(l => l.includes('picker failed for Bad.md') && l.includes('note vanished'))).toBe(true);
+		expect(notices[0]).toContain('1 picked, 1 skipped');
+	});
+
 	test('no needsChoice entries -> summary omits the picked/skipped clause entirely', async () => {
 		const c = new LibraryController(fakePlugin());
 		const notices: string[] = [];

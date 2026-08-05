@@ -227,20 +227,19 @@ export class LibraryController {
 			let skipped = 0;
 			if (!dryRun) {
 				for (const entry of report.needsChoice) {
-					const idx = await this.pickCandidate(entry.filename, entry.candidates);
-					const candidate = idx != null ? entry.candidates[idx] : undefined;
-					if (!candidate) {
-						skipped++;
-						continue;
-					}
 					try {
+						const idx = await this.pickCandidate(entry.filename, entry.candidates);
+						const candidate = idx != null ? entry.candidates[idx] : undefined;
+						if (!candidate) {
+							skipped++;
+							continue;
+						}
 						const content = await deps.readNote(entry.path);
 						await deps.writeNote(entry.path, patchFrontmatter(content, candidate.patches, { defaultType: spec.itemType }));
 						report.resolved.push(entry.path);
 						picked++;
 					} catch (e) {
-						const msg = e instanceof Error ? e.message : String(e);
-						console.log(`[media-db-library] picker failed for ${entry.filename}: ${msg}`);
+						deps.log(`picker failed for ${entry.filename}: ${e instanceof Error ? e.message : String(e)}`);
 						skipped++;
 					}
 				}
